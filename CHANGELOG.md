@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-MM-DD
+## [0.1.0] - 2026-10-09
 
 ### Added
 - `taraengine serve`: supervises one llama-server (upstream build b11514, pinned and checksum-verified) in
