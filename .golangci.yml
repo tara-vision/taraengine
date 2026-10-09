@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosec
+    - revive
+    - gocyclo
+    - lll
+    - misspell
+  settings:
+    gocyclo:
+      min-complexity: 20
+    lll:
+      line-length: 120
+    gosec:
+      excludes:
+        - G204 # the daemon runs the pinned runtime and system probes by design
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - lll
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

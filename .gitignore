@@ -1,0 +1,5 @@
+/taraengine
+/dist/
+/coverage.out
+/.superpowers/
+.DS_Store

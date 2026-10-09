@@ -1,0 +1,35 @@
+# Pinned upstream llama.cpp build: one build per taraengine release. The sha256 values are those of
+# the GitHub release assets; scripts/pin-runtime.sh <build> internal/runtime/runtime.lock.yaml regenerates this file and CI verifies it.
+build: b11514
+assets:
+  darwin/arm64:
+    asset: llama-b11514-bin-macos-arm64.tar.gz
+    sha256: e16abae5c048b77e0e8608728b162d88295bda6abbe449a8ba85c95fa734ee24
+  linux/amd64/cuda13:
+    asset: llama-b11514-bin-ubuntu-cuda-13.4-x64.tar.gz
+    sha256: 4895691b6c7e8cec03788d84b2e5424a26a9694be541e786cb30415b4b2dd801
+  linux/amd64/cuda12:
+    asset: llama-b11514-bin-ubuntu-cuda-12.8-x64.tar.gz
+    sha256: d99a290f852d060e6b59969c0d7c2fb031eec0afd9e1e23a07f2f6117ff04fca
+  linux/amd64/cpu:
+    asset: llama-b11514-bin-ubuntu-x64.tar.gz
+    sha256: b2b617fb28e9d1444235c30bb09a3704789a1840e16ead58a5f7be6eeae8beef
+  linux/arm64/cuda13:
+    asset: llama-b11514-bin-ubuntu-cuda-13.4-arm64.tar.gz
+    sha256: 636a1226a9923a8118e2e088831582c58a2dd7a7e91cd2fde7d2924104bf97e8
+    untested: true
+  linux/arm64/cpu:
+    asset: llama-b11514-bin-ubuntu-arm64.tar.gz
+    sha256: 54ad6ca00d11b9fbeea134aa5b13642b8b4f840188d2f6929d08e49cbce16ea9
+    untested: true
+cudart:
+  linux/amd64/cuda13:
+    asset: cudart-llama-b11514-bin-ubuntu-cuda-13.4-x64.tar.gz
+    sha256: dbdc8cea6dc1aa515ad08f7215315dd034b03b97c86ce1527e5514eef7cdec84
+  linux/amd64/cuda12:
+    asset: cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64.tar.gz
+    sha256: e90f47c7549bea8e82c67e8a45bf429b5496d801e0692800d00446ca6f5a451a
+  linux/arm64/cuda13:
+    asset: cudart-llama-b11514-bin-ubuntu-cuda-13.4-arm64.tar.gz
+    sha256: a0244688a420f11abef2e4b3276396c94aa5f3fd01a624210f450d161e67aa63
+    untested: true

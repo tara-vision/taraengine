@@ -1,0 +1,13 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+    patch:
+      default:
+        target: 100%
+
+# The main package only builds the command tree and turns its error into an exit status; the integration test is
+# what runs it.
+ignore:
+  - "cmd/**/*"

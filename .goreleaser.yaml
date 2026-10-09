@@ -1,0 +1,81 @@
+version: 2
+
+project_name: taraengine
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: taraengine
+    main: ./cmd/taraengine
+    binary: taraengine
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/tara-vision/taraengine/internal/version.Version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: binaries
+    ids: [taraengine]
+    formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+signs:
+  # cosign 3.x writes a Sigstore bundle (signature + certificate + log entry in one file).
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
+nfpms:
+  - id: packages
+    package_name: taraengine
+    ids: [taraengine]
+    vendor: Tara Vision, LLC
+    homepage: https://github.com/tara-vision/taraengine
+    maintainer: "Tara Vision, LLC <contact@tara.vision>"
+    description: The Tara Vision inference engine, a local OpenAI-compatible server built on llama.cpp
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    section: utils
+    bindir: /usr/bin
+    # The license texts go where the packaging policies of both families expect them.
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/taraengine/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/taraengine/NOTICE
+
+release:
+  github:
+    owner: tara-vision
+    name: taraengine
+  draft: false
+  prerelease: auto
+  mode: replace
+
+changelog:
+  disable: true
