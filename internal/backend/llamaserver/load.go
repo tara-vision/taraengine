@@ -21,9 +21,11 @@ const (
 	routerSleeping = "sleeping"
 )
 
-// Load brings the model up at the requested context, waits for it, records the outcome, then reads
-// the props and measures the memory. Loads are serialized. opts.Draft needs nothing from the backend:
-// the draft sibling of a pulled model is always part of its preset.
+// Load brings the model up at the requested context, waits for it, records the outcome, then reads the props and
+// measures the memory. Loads are serialized. A model the router already runs at the requested window is not loaded
+// again: one that is up gets the figures it lacks, one that sleeps wakes on its first request, and one that is
+// still loading, as a request can start it, is waited for and recorded as if this load had started it. opts.Draft
+// needs nothing from the backend: the draft sibling of a pulled model is always part of its preset.
 func (b *Backend) Load(ctx context.Context, name string, opts backend.LoadOptions) error {
 	b.opMu.Lock()
 	defer b.opMu.Unlock()
@@ -45,9 +47,15 @@ func (b *Backend) Load(ctx context.Context, name string, opts backend.LoadOption
 	switch {
 	case want != preset.Context:
 		return b.loadAtNewContext(ctx, name, current, want)
-	case current.Status == routerLoaded:
-		b.recordMissing(ctx, name, false, slog.LevelWarn)
+	case current.Status == routerLoaded || current.Status == routerSleeping:
+		b.recordMissing(ctx, name, current.Status == routerSleeping, slog.LevelWarn)
 		return nil
+	case current.Status == routerLoading:
+		final, err := b.awaitLoaded(ctx, name, true)
+		if err != nil {
+			return err
+		}
+		return b.finishLoad(ctx, name, final, want)
 	}
 	return b.bringUp(ctx, name, current, want)
 }
@@ -81,7 +89,7 @@ func (b *Backend) bringUp(ctx context.Context, name string, current RouterModel,
 	if err := b.client.Load(ctx, SectionID(name)); err != nil {
 		return err
 	}
-	final, err := b.awaitLoaded(ctx, name)
+	final, err := b.awaitLoaded(ctx, name, false)
 	if err != nil {
 		return err
 	}
@@ -198,21 +206,21 @@ func (b *Backend) routerStatus(ctx context.Context, name string) (RouterModel, e
 	return RouterModel{}, fmt.Errorf("%w: %s", backend.ErrUnknownModel, name)
 }
 
-// awaitLoaded polls until the model is loaded or has failed, or the load timeout passes; on a
-// timeout the load is cancelled with an unload so the next load starts clean. A model the router lists
-// as unloaded again, without a failure, after it was seen loading has been dropped, as another load
-// that evicts it does, and the wait ends there instead of holding every other operation until the
-// timeout.
-func (b *Backend) awaitLoaded(ctx context.Context, name string) (RouterModel, error) {
+// awaitLoaded polls until the model is up or has failed, or the load timeout passes; on a timeout the load is
+// cancelled with an unload so the next load starts clean. A model is up once it is loaded, or asleep, which it can
+// be by the next poll when sleep_idle_seconds is short. A model the router lists as unloaded again, without a
+// failure, after it was seen loading has been dropped, as another load that evicts it does, and the wait ends there
+// instead of holding every other operation until the timeout. seenLoading says that the caller found the model
+// loading already.
+func (b *Backend) awaitLoaded(ctx context.Context, name string, seenLoading bool) (RouterModel, error) {
 	deadline := time.Now().Add(b.opts.LoadTimeout)
-	seenLoading := false
 	for {
 		m, err := b.routerStatus(ctx, name)
 		if err != nil {
 			return m, err
 		}
 		switch {
-		case m.Status == routerLoaded || m.Failed:
+		case m.Status == routerLoaded || m.Status == routerSleeping || m.Failed:
 			return m, nil
 		case m.Status == routerLoading:
 			seenLoading = true
