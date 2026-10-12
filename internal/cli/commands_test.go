@@ -237,3 +237,12 @@ func TestARefusedKeyIsAnsweredWithTheCLIsOwnHint(t *testing.T) {
 		t.Errorf("a wrong key is refused the same way: %v", err)
 	}
 }
+
+func TestARefusedKeyKeepsWhatTheClientFoundOutAboutTheBody(t *testing.T) {
+	gateway := stub(t, http.StatusUnauthorized, "<html>no key</html>")
+	_, err := run(t, "list", "--host="+gateway)
+	var refused *client.Error
+	if !errors.As(err, &refused) || !refused.NotJSON || refused.Hint != keyHint || refused.Message != "<html>no key</html>" {
+		t.Fatalf("the CLI's hint goes on the error the client made, and nothing else changes: %#v", err)
+	}
+}

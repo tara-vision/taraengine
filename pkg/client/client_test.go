@@ -483,3 +483,38 @@ func TestFailureTextFallsBackToTheStatus(t *testing.T) {
 		}
 	})
 }
+
+func TestARefusalThatIsNotTheEnginesJSONIsMarkedAndShortened(t *testing.T) {
+	ctx := context.Background()
+	opening := "<html> <head><title>502 Bad Gateway</title></head> <body>"
+	page := "<html>\r\n<head><title>502 Bad Gateway</title></head>\n\t<body>" + strings.Repeat("x", 1000) + "</body></html>"
+	rows := []struct {
+		name, contentType, body, want string
+	}{
+		{"a text body", "text/plain", "upstream\r\n\tconnect\x1b[31m error\n", "upstream connect[31m error"},
+		{"a proxy's page", "text/html", page, (opening + strings.Repeat("x", 1000))[:300]},
+		{"a cut that would split a character", "text/plain", strings.Repeat("x", 299) + "é and more", strings.Repeat("x", 299)},
+		{"a gateway's own JSON", "application/json", `{"message":"no API key"}`, `{"message":"no API key"}`},
+		{"an empty object", "application/json", `{}`, `{}`},
+		{"null", "application/json", `null`, `null`},
+		{"an error without a message", "application/json", `{"error":{"message":"  ","hint":"h"}}`, `{"error":{"message":"  ","hint":"h"}}`},
+		{"no body at all", "text/plain", "", "Bad Gateway"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			var apiErr *client.Error
+			_, err := raw(t, http.StatusBadGateway, row.contentType, row.body).Version(ctx)
+			if !errors.As(err, &apiErr) || !apiErr.NotJSON || apiErr.Message != row.want || apiErr.Hint != "" {
+				t.Fatalf("got %#v, want NotJSON with the message %q", apiErr, row.want)
+			}
+		})
+	}
+}
+
+func TestTheEnginesOwnRefusalIsNotMarked(t *testing.T) {
+	var apiErr *client.Error
+	_, err := raw(t, http.StatusConflict, "application/json", `{"error":{"message":" faulty ","hint":"force it"}}`).Version(context.Background())
+	if !errors.As(err, &apiErr) || apiErr.NotJSON || apiErr.Message != "faulty" || apiErr.Hint != "force it" {
+		t.Fatalf("%#v", apiErr)
+	}
+}
