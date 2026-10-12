@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/state"
@@ -508,12 +509,24 @@ func readLogTail(path string, maxBytes int64, maxLines int) string {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return ""
 	}
-	text := string(window[:n])
+	text := printable(string(window[:n]))
 	if i := strings.IndexByte(text, '\n'); start > 0 && i >= 0 {
 		text = text[i+1:] // the window opens inside a line, so the first piece is left out
 	}
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	return strings.Join(lines[max(len(lines)-maxLines, 0):], "\n")
+}
+
+// printable is the log's text without the control characters a terminal acts on, line feeds and tabs kept: the log
+// echoes an imported model's metadata, and every client that prints the tail writes it to a terminal. A byte that is
+// no character becomes U+FFFD.
+func printable(text string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && r != '\t' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, text)
 }
 
 // restingStatusLocked is the status of a model the router is not running.
