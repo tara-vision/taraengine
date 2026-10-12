@@ -66,13 +66,14 @@ type Backend struct {
 	// last save, so the state file is only ever written by one operation at a time.
 	opMu sync.Mutex
 
-	mu     sync.Mutex // guards the fields below
-	lock   *os.File   // the data directory's lock while the backend is started
-	sup    childProcess
-	roster roster
-	memory map[string]backend.Memory
-	props  map[string]backend.Props
-	st     state.State
+	mu       sync.Mutex // guards the fields below
+	lock     *os.File   // the data directory's lock while the backend is started
+	sup      childProcess
+	roster   roster
+	memory   map[string]backend.Memory
+	props    map[string]backend.Props
+	noMemory map[string]bool // the running models whose run has no memory figure to give (see measureMemory)
+	st       state.State
 }
 
 var _ backend.Backend = (*Backend)(nil)
@@ -99,6 +100,7 @@ func New(opts Options) (*Backend, error) {
 		unloadWait: defaultUnloadWait,
 		memory:     map[string]backend.Memory{},
 		props:      map[string]backend.Props{},
+		noMemory:   map[string]bool{},
 	}, nil
 }
 
@@ -439,6 +441,7 @@ func (b *Backend) observeLocked(name string, m RouterModel) backend.ModelStatus 
 	if ms.Status != backend.StatusLoaded && ms.Status != backend.StatusSleeping && ms.Status != backend.StatusLoading {
 		delete(b.memory, name)
 		delete(b.props, name)
+		delete(b.noMemory, name)
 		return ms
 	}
 	if mem, ok := b.memory[name]; ok {
@@ -545,6 +548,7 @@ func (b *Backend) unload(ctx context.Context, name string) error {
 	b.mu.Lock()
 	delete(b.memory, name)
 	delete(b.props, name)
+	delete(b.noMemory, name)
 	b.mu.Unlock()
 	return b.awaitStopped(ctx, name)
 }

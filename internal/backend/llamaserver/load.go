@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tara-vision/taraengine/internal/backend"
-	"github.com/tara-vision/taraengine/internal/measure"
 	"github.com/tara-vision/taraengine/internal/state"
 )
 
@@ -46,21 +46,10 @@ func (b *Backend) Load(ctx context.Context, name string, opts backend.LoadOption
 	case want != preset.Context:
 		return b.loadAtNewContext(ctx, name, current, want)
 	case current.Status == routerLoaded:
-		b.recordMissing(ctx, name)
+		b.recordMissing(ctx, name, false, slog.LevelWarn)
 		return nil
 	}
 	return b.bringUp(ctx, name, current, want)
-}
-
-// recordMissing records the figures of a model that runs without them, as one an autoload brought up does.
-func (b *Backend) recordMissing(ctx context.Context, name string) {
-	b.mu.Lock()
-	_, hasProps := b.props[name]
-	_, hasMemory := b.memory[name]
-	b.mu.Unlock()
-	if !hasProps || !hasMemory {
-		b.record(ctx, name)
-	}
 }
 
 // loadAtNewContext loads the model at a window other than the one its preset carries. The window is
@@ -110,7 +99,7 @@ func (b *Backend) finishLoad(ctx context.Context, name string, final RouterModel
 		return errors.Join(failure, saved)
 	}
 	saved := b.updateState(func(s state.State) state.State { return s.ClearFailures(name).WithLastLoaded(name) })
-	b.record(ctx, name)
+	b.record(ctx, name, final.Status == routerSleeping)
 	return saved
 }
 
@@ -243,45 +232,4 @@ func (b *Backend) awaitLoaded(ctx context.Context, name string) (RouterModel, er
 		case <-time.After(b.opts.Poll):
 		}
 	}
-}
-
-// record caches the props and the memory of a model that just loaded. Neither is the load's to fail,
-// and what an earlier load cached is dropped first, so a figure never outlives the process it described.
-func (b *Backend) record(ctx context.Context, name string) {
-	props, propsErr := b.client.Props(ctx, SectionID(name))
-	if propsErr != nil {
-		b.opts.Logger.Warn("props unavailable after load", "model", name, "error", propsErr)
-	}
-	mem := b.memoryOf(ctx, name)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	delete(b.props, name)
-	delete(b.memory, name)
-	if propsErr == nil {
-		b.props[name] = props
-	}
-	if mem != nil {
-		b.memory[name] = *mem
-	}
-}
-
-// memoryOf measures the process tree of the supervised child, or of the attached router. No probe, no
-// process and no figure all mean "unknown", which is nil; only a probe that breaks is worth a warning.
-func (b *Backend) memoryOf(ctx context.Context, name string) *backend.Memory {
-	pid := b.opts.AttachPID
-	if sup := b.supervisor(); sup != nil {
-		pid = sup.PID()
-	}
-	if b.opts.Probe == nil || pid <= 0 {
-		return nil
-	}
-	mem, err := b.opts.Probe.Measure(ctx, pid)
-	switch {
-	case errors.Is(err, measure.ErrNoFigure):
-		return nil
-	case err != nil:
-		b.opts.Logger.Warn("memory probe failed", "model", name, "error", err)
-		return nil
-	}
-	return &mem
 }

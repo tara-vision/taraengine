@@ -119,10 +119,11 @@ func (c *Client) Unload(ctx context.Context, id string) error {
 	return err
 }
 
-// Props is GET /props?model=<id> for a loaded model.
+// Props is GET /props?model=<id>&autoload=false for a running model. With autoload off the router answers 400 for a
+// model it does not run instead of loading it, so reading the props never starts a model.
 func (c *Client) Props(ctx context.Context, id string) (backend.Props, error) {
 	var resp propsResponse
-	if err := c.call(ctx, http.MethodGet, "/props?model="+url.QueryEscape(id), nil, &resp); err != nil {
+	if err := c.call(ctx, http.MethodGet, "/props?model="+url.QueryEscape(id)+"&autoload=false", nil, &resp); err != nil {
 		return backend.Props{}, err
 	}
 	tpl := resp.ChatTemplate
