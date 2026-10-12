@@ -108,3 +108,33 @@ func TestDefaultIsAbsentForAnUnknownTier(t *testing.T) {
 		t.Fatal("an unknown tier must have no default")
 	}
 }
+
+// TestTheCatalogPinsEachModelsKVCache: the models in q8 run a q8_0 KV cache, and the others keep llama-server's f16
+// default.
+func TestTheCatalogPinsEachModelsKVCache(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q8 := map[string]bool{"gemma4:e4b": true, "glm-4.7-flash": true, "qwen3.6:27b": true, "qwen3.8:27b": true,
+		"qwen3.6:35b": true}
+	for _, e := range r.Entries {
+		k, v := e.Preset["cache-type-k"], e.Preset["cache-type-v"]
+		switch {
+		case q8[e.Name] && (k != "q8_0" || v != "q8_0"):
+			t.Errorf("%s: cache-type-k %q, cache-type-v %q, want q8_0 for both", e.Name, k, v)
+		case !q8[e.Name] && (k != "" || v != ""):
+			t.Errorf("%s: cache-type-k %q, cache-type-v %q, want neither", e.Name, k, v)
+		}
+	}
+}
+
+func TestCanonicalKeyNamesAnAliasByItsLongName(t *testing.T) {
+	cases := map[string]string{"ctk": "cache-type-k", "ctv": "cache-type-v", "ngl": "n-gpu-layers", "fa": "flash-attn",
+		"cache-type-k": "cache-type-k", "temp": "temp"}
+	for key, want := range cases {
+		if got := CanonicalKey(key); got != want {
+			t.Errorf("CanonicalKey(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

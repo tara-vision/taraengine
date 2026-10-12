@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/tara-vision/taraengine/internal/api"
@@ -174,6 +175,29 @@ type modelLister = func(ctx context.Context, overrides map[string]int) ([]llamas
 
 // presetModels renders the pulled models of the catalog with their context and registry presets. The draft
 // sibling of a model is part of its preset once it is pulled, which is what turns speculative decoding on.
+// withoutGlobalKeys is a catalog preset without the keys the operator's preset_global sets, in either of their
+// names, since the operator's choice applies to every model, the catalog's own included; and without a quantized V
+// cache when preset_global turns flash attention off, which llama.cpp needs for one.
+func withoutGlobalKeys(preset, global map[string]string) map[string]string {
+	out := maps.Clone(preset)
+	set := map[string]bool{}
+	for key, value := range global {
+		set[registry.CanonicalKey(key)] = true
+		if registry.CanonicalKey(key) == "flash-attn" && flashOff[strings.ToLower(value)] {
+			set["cache-type-v"] = true
+		}
+	}
+	for key := range preset {
+		if set[registry.CanonicalKey(key)] {
+			delete(out, key)
+		}
+	}
+	return out
+}
+
+// flashOff are the values that turn llama-server's flash attention off.
+var flashOff = map[string]bool{"off": true, "false": true, "0": true, "no": true, "disabled": true}
+
 func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 	return func(_ context.Context, overrides map[string]int) ([]llamaserver.PresetModel, error) {
 		items, err := cat.List()
@@ -189,7 +213,7 @@ func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 			var extra map[string]string
 			if it.Entry != nil {
 				tier = it.Entry.Tier
-				extra = maps.Clone(it.Entry.Preset)
+				extra = withoutGlobalKeys(it.Entry.Preset, cfg.PresetGlobal)
 			}
 			window := cfg.ContextFor(tier, it.NativeContext)
 			if override, ok := overrides[it.Name]; ok {

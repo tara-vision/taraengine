@@ -131,21 +131,25 @@ The catalog is built into the binary. Each entry pins a Hugging Face file by siz
 projector that lets a model read images and the draft model that speeds it up (speculative decoding), when the
 model has them. A pull fetches all of them.
 
-| Name          | Tier            | Size    | Capabilities            |
-|---------------|-----------------|---------|-------------------------|
-| gemma4:e4b    | small (default) | 4.6 GB  | tools, thinking, vision |
-| gemma4:12b    | 16 (default)    | 7.2 GB  | tools, thinking, vision |
-| gemma4:26b    | 32              | 14.6 GB | tools, thinking, vision |
-| gemma4:31b    | 48              | 18.0 GB | tools, thinking, vision |
-| glm-4.7-flash | 32 (default)    | 18.2 GB | tools, thinking         |
-| qwen3.6:27b   | 32              | 19.1 GB | tools, thinking, vision |
-| qwen3.8:27b   | 32              | 19.0 GB | tools, thinking, vision |
-| qwen3.6:35b   | 48 (default)    | 20.4 GB | tools, thinking, vision |
+| Name          | Tier            | Size    | Capabilities            | KV cache |
+|---------------|-----------------|---------|-------------------------|----------|
+| gemma4:e4b    | small (default) | 4.6 GB  | tools, thinking, vision | q8_0     |
+| gemma4:12b    | 16 (default)    | 7.2 GB  | tools, thinking, vision | f16      |
+| gemma4:26b    | 32              | 14.6 GB | tools, thinking, vision | f16      |
+| gemma4:31b    | 48              | 18.0 GB | tools, thinking, vision | f16      |
+| glm-4.7-flash | 32 (default)    | 18.2 GB | tools, thinking         | q8_0     |
+| qwen3.6:27b   | 32              | 19.1 GB | tools, thinking, vision | q8_0     |
+| qwen3.8:27b   | 32              | 19.0 GB | tools, thinking, vision | q8_0     |
+| qwen3.6:35b   | 48 (default)    | 20.4 GB | tools, thinking, vision | q8_0     |
 
-Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. A tier is the
-RAM class a model is meant for. `small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts
-as `16`, `32` or `48`. `(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps
-the license of its authors; read it on the model's Hugging Face page before you use it.
+Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. KV cache is the
+type of the model's attention cache: q8_0 holds less memory than f16 at the same window, and an entry keeps f16 where
+q8_0 cost it more than a tenth of its speed on the RTX 5090 board. A `cache-type-k` or `cache-type-v` in
+`preset_global` sets another for every model, these included. llama.cpp quantizes the V cache only with flash
+attention, so with `flash-attn: "off"` in `preset_global` these models keep an f16 V cache. A tier is the RAM class a
+model is meant for. `small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`,
+`32` or `48`. `(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps the license
+of its authors; read it on the model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
@@ -303,7 +307,7 @@ Keep the key in the configuration file (with a mode that only you can read) or i
 | `hf_token` | none | A Hugging Face token for gated or private repositories. It is sent to Hugging Face only and never logged. |
 | `load_timeout` | `600` | Seconds that a load may take before it is given up, at least 1. Raise it for a slow disk. |
 | `runtime_dir` | none | A runtime directory to run instead of the pinned build under the data directory. It has to hold the `manifest.json` that `runtime install` writes, and it is verified like the pinned build. |
-| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. Quote numbers. |
+| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
 
 ```yaml
 # ~/.config/taraengine/config.yaml
