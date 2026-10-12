@@ -273,3 +273,43 @@ func TestASleepingModelGetsItsPropsButNoMemory(t *testing.T) {
 		t.Fatalf("once it runs, its memory is recorded: %+v, probes %v", a, h.probe.pids)
 	}
 }
+
+func TestARecordingTheSecondLookCannotConfirmLeavesTheFiguresDue(t *testing.T) {
+	rows := []struct {
+		name  string
+		first func() (backend.Memory, error)
+	}{
+		{"a figure", func() (backend.Memory, error) { return backend.Memory{Bytes: 7 << 30, Source: "measured"}, nil }},
+		{"no figure for the run", func() (backend.Memory, error) { return backend.Memory{}, measure.ErrNoFigure }},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var calls atomic.Int32
+			h := newHarnessWith(t, 0, func(fake *llamatest.Server, o *Options) {
+				o.Probe = probeFunc(func(context.Context, int) (backend.Memory, error) {
+					if calls.Add(1) == 1 {
+						fake.SetStatus("a", "unloaded") // evicted while it is measured
+						cancel()                        // and the reader hangs up before the second look
+						return row.first()
+					}
+					return backend.Memory{Bytes: 3 << 30, Source: "measured"}, nil
+				})
+			})
+			h.fake.SetStatus("a", "loaded")
+			if _, err := h.b.Models(ctx); err != nil {
+				t.Fatal(err)
+			}
+			h.fake.SetStatus("a", "loaded") // the model comes back on its own before any other read
+			a := statusOf(t, h.b, "a")
+			if a.Memory == nil || a.Memory.Bytes != 3<<30 || calls.Load() != 2 {
+				t.Fatalf("what the second look could not confirm is not kept, and the new run is measured: %+v, %d probes",
+					a, calls.Load())
+			}
+			if n := countRequests(h.fake, "GET /props"); n != 2 {
+				t.Fatalf("the props taken in that step are read again: %d reads", n)
+			}
+		})
+	}
+}

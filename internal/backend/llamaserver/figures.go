@@ -38,20 +38,38 @@ func (b *Backend) record(ctx context.Context, name string, asleep bool) {
 }
 
 // recordMissing caches the figures a running model lacks and never replaces one it has, as for a model that a
-// request brought up on its own. A sleeping model gets its props only. Every recording runs under opMu, so no
-// other one caches a figure between the look at what is missing and the keep.
-func (b *Backend) recordMissing(ctx context.Context, name string, asleep bool, level slog.Level) {
+// request brought up on its own, and returns what it cached. A sleeping model gets its props only. Every recording
+// runs under opMu, so no other one caches a figure between the look at what is missing and the keep.
+func (b *Backend) recordMissing(ctx context.Context, name string, asleep bool, level slog.Level) figures {
 	b.mu.Lock()
 	need := b.missingLocked(name, asleep)
 	b.mu.Unlock()
 	if !need.props && !need.memory {
-		return
+		return figures{}
 	}
 	got := b.readFigures(ctx, name, need, level)
 	b.mu.Lock()
 	b.keepLocked(name, got)
 	b.mu.Unlock()
 	b.handOn(name, got)
+	return got
+}
+
+// forgetFigures drops the figures a recording cached, so that they are due again.
+func (b *Backend) forgetFigures(kept map[string]figures) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for name, got := range kept {
+		if got.props != nil {
+			delete(b.props, name)
+		}
+		if got.memory != nil {
+			delete(b.memory, name)
+		}
+		if got.noMemory {
+			delete(b.noMemory, name)
+		}
+	}
 }
 
 // handOn gives the props a recording read to OnProps. The caller does not hold b.mu: the callback saves a file.
@@ -133,8 +151,9 @@ type dueModel struct {
 // recordDue records the figures that a read found due and answers with the router as it is afterwards, so that a
 // model that stopped meanwhile shows none. It runs only when no operation holds the backend: a read never waits
 // behind a load, which can take minutes, and leaves the figures to a later read. The recording has a deadline of
-// its own, and what it cannot finish by then stays due; when the second look at the router fails, the read answers
-// with the first.
+// its own, and what it cannot finish by then stays due. When the second look at the router fails, nothing confirms
+// that the models still ran while their figures were taken: what the recording cached is dropped and stays due, and
+// the read answers with the first look.
 func (b *Backend) recordDue(ctx context.Context, seen []backend.ModelStatus, due []dueModel) []backend.ModelStatus {
 	if !b.opMu.TryLock() {
 		return seen
@@ -142,11 +161,13 @@ func (b *Backend) recordDue(ctx context.Context, seen []backend.ModelStatus, due
 	defer b.opMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, b.recordWait)
 	defer cancel()
+	kept := make(map[string]figures, len(due))
 	for _, d := range due {
-		b.recordMissing(ctx, d.name, d.asleep, slog.LevelDebug)
+		kept[d.name] = b.recordMissing(ctx, d.name, d.asleep, slog.LevelDebug)
 	}
 	list, err := b.client.Models(ctx, false)
 	if err != nil {
+		b.forgetFigures(kept)
 		return seen
 	}
 	out, _ := b.observe(list)
