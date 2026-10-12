@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -579,5 +580,28 @@ func TestPresetModelsLetPresetGlobalWinOverACatalogPreset(t *testing.T) {
 	cfg.PresetGlobal = map[string]string{"flash-attn": "off"}
 	if models, _ = presetModels(cat, cfg)(context.Background(), nil); models[0].Extra["cache-type-k"] != "q8_0" {
 		t.Fatalf("a preset_global key the catalog does not set dropped its preset: %+v", models[0])
+	}
+}
+
+// TestWithoutGlobalKeysDropsAQuantizedVCacheWhenFlashAttentionIsOff: llama.cpp needs flash attention for a
+// quantized V cache, so an operator who turns it off keeps every catalog model loadable, with an f16 V cache.
+func TestWithoutGlobalKeysDropsAQuantizedVCacheWhenFlashAttentionIsOff(t *testing.T) {
+	preset := map[string]string{"cache-type-k": "q8_0", "cache-type-v": "q8_0"}
+	kOnly := map[string]string{"cache-type-k": "q8_0"}
+	cases := []struct {
+		name   string
+		global map[string]string
+		want   map[string]string
+	}{
+		{"flash-attn off", map[string]string{"flash-attn": "off"}, kOnly},
+		{"the short name, false", map[string]string{"fa": "False"}, kOnly},
+		{"auto", map[string]string{"flash-attn": "auto"}, preset},
+		{"the operator's own V cache", map[string]string{"ctv": "f16"}, kOnly},
+		{"nothing set", nil, preset},
+	}
+	for _, c := range cases {
+		if got := withoutGlobalKeys(preset, c.global); !maps.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
 	}
 }

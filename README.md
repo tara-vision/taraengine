@@ -145,10 +145,11 @@ model has them. A pull fetches all of them.
 Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. KV cache is the
 type of the model's attention cache: q8_0 holds less memory than f16 at the same window, and an entry keeps f16 where
 q8_0 cost it more than a tenth of its speed on the RTX 5090 board. A `cache-type-k` or `cache-type-v` in
-`preset_global` sets another for every model, these included. A tier is the RAM class a model is meant for. `small`
-suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`, `32` or `48`. `(default)` marks
-the model that `taraengine doctor` recommends for a tier. Each model keeps the license of its authors; read it on the
-model's Hugging Face page before you use it.
+`preset_global` sets another for every model, these included. llama.cpp quantizes the V cache only with flash
+attention, so with `flash-attn: "off"` in `preset_global` these models keep an f16 V cache. A tier is the RAM class a
+model is meant for. `small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`,
+`32` or `48`. `(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps the license
+of its authors; read it on the model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
