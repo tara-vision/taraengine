@@ -27,6 +27,9 @@ const (
 	// at once and lists the model as running for about 80 ms more. unloadPoll is the pause between reads.
 	defaultUnloadWait = 2 * time.Second
 	unloadPoll        = 20 * time.Millisecond
+	// recordOnReadTimeout bounds the recording that a read of the model list does, every model of the read
+	// included, so that a read never holds the operations lock longer.
+	recordOnReadTimeout = 10 * time.Second
 )
 
 // errBackendStarted is what Start returns while a child is already supervised.
@@ -61,6 +64,7 @@ type Backend struct {
 	newProcess func(SupervisorOptions) childProcess // a seam: the tests replace it
 	maxBody    int64                                // the largest /v1 request body the proxy buffers
 	unloadWait time.Duration                        // how long an unload waits for the router to stop the model
+	recordWait time.Duration                        // how long a read may record the figures it found missing
 
 	// opMu serializes Start, Refresh, Load and Unload. Load holds it from the first status read to the
 	// last save, so the state file is only ever written by one operation at a time.
@@ -98,6 +102,7 @@ func New(opts Options) (*Backend, error) {
 		newProcess: func(o SupervisorOptions) childProcess { return NewSupervisor(o) },
 		maxBody:    maxRequestBody,
 		unloadWait: defaultUnloadWait,
+		recordWait: recordOnReadTimeout,
 		memory:     map[string]backend.Memory{},
 		props:      map[string]backend.Props{},
 		noMemory:   map[string]bool{},
@@ -396,30 +401,46 @@ func keyProblem(key string) string {
 	return ""
 }
 
-// Models lists the catalog models the router knows, with the status rules of the spec. A model the
-// router lists on its own, such as one from its cache, is not ours and does not appear. A failed or
-// faulty model carries the end of the child's log.
+// Models lists the catalog models the router knows, with the status rules of the spec. A model the router lists on
+// its own, such as one from its cache, is not ours and does not appear. A failed or faulty model carries the end of
+// the child's log. A running model found without its figures, such as one a request brought up on its own, gets
+// them recorded here when no operation holds the backend, and the answer shows them.
 func (b *Backend) Models(ctx context.Context) ([]backend.ModelStatus, error) {
 	list, err := b.client.Models(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	out := b.observe(list)
+	out, due := b.observe(list)
+	if len(due) > 0 {
+		out = b.recordDue(ctx, out, due)
+	}
 	attachLogTail(out, LogPath(b.opts.DataDir))
 	return out, nil
 }
 
-// observe turns the router's list into statuses while holding the lock.
-func (b *Backend) observe(list []RouterModel) []backend.ModelStatus {
+// observe turns the router's list into statuses while holding the lock, and names the running models whose
+// figures are due.
+func (b *Backend) observe(list []RouterModel) ([]backend.ModelStatus, []dueModel) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	out := make([]backend.ModelStatus, 0, len(list))
+	var due []dueModel
 	for _, m := range list {
-		if name, ours := b.roster.nameOf[m.ID]; ours {
-			out = append(out, b.observeLocked(name, m))
+		name, ours := b.roster.nameOf[m.ID]
+		if !ours {
+			continue
+		}
+		ms := b.observeLocked(name, m)
+		out = append(out, ms)
+		if ms.Status != backend.StatusLoaded && ms.Status != backend.StatusSleeping {
+			continue
+		}
+		asleep := ms.Status == backend.StatusSleeping
+		if need := b.missingLocked(name, asleep); need.props || need.memory {
+			due = append(due, dueModel{name: name, asleep: asleep})
 		}
 	}
-	return out
+	return out, due
 }
 
 // observeLocked reads one router entry. A model the router is running, or is loading again, as it does

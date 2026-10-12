@@ -114,3 +114,32 @@ func (b *Backend) measureMemory(ctx context.Context, name string, level slog.Lev
 	}
 	return &got, false
 }
+
+// dueModel is a running model whose figures a read records.
+type dueModel struct {
+	name   string
+	asleep bool
+}
+
+// recordDue records the figures that a read found due and answers with the router as it is afterwards, so that a
+// model that stopped meanwhile shows none. It runs only when no operation holds the backend: a read never waits
+// behind a load, which can take minutes, and leaves the figures to a later read. The recording has a deadline of
+// its own, and what it cannot finish by then stays due; when the second look at the router fails, the read answers
+// with the first.
+func (b *Backend) recordDue(ctx context.Context, seen []backend.ModelStatus, due []dueModel) []backend.ModelStatus {
+	if !b.opMu.TryLock() {
+		return seen
+	}
+	defer b.opMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, b.recordWait)
+	defer cancel()
+	for _, d := range due {
+		b.recordMissing(ctx, d.name, d.asleep, slog.LevelDebug)
+	}
+	list, err := b.client.Models(ctx, false)
+	if err != nil {
+		return seen
+	}
+	out, _ := b.observe(list)
+	return out
+}

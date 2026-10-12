@@ -9,7 +9,7 @@ import (
 	"github.com/tara-vision/taraengine/internal/measure"
 )
 
-func TestModelsForgetFiguresOfAModelTheRouterNoLongerRuns(t *testing.T) {
+func TestModelsShowTheFiguresOfTheRunThatIsUp(t *testing.T) {
 	h := newHarness(t, 0)
 	if err := h.b.Load(context.Background(), "a", backend.LoadOptions{}); err != nil {
 		t.Fatal(err)
@@ -18,9 +18,11 @@ func TestModelsForgetFiguresOfAModelTheRouterNoLongerRuns(t *testing.T) {
 	if a := statusOf(t, h.b, "a"); a.Memory != nil || a.Props != nil {
 		t.Fatalf("a model that is not running shows no figures: %+v", a)
 	}
+	h.probe.mem = backend.Memory{Bytes: 3 << 30, Source: "measured"}
 	h.fake.SetStatus("a", "loaded") // the router brings it back on its own, as an autoload does
-	if a := statusOf(t, h.b, "a"); a.Status != backend.StatusLoaded || a.Memory != nil || a.Props != nil {
-		t.Fatalf("figures of the earlier run must not come back with the model: %+v", a)
+	a := statusOf(t, h.b, "a")
+	if a.Status != backend.StatusLoaded || a.Memory == nil || a.Memory.Bytes != 3<<30 || a.Props == nil {
+		t.Fatalf("a model that came back shows the figures of its new run, never those of the earlier one: %+v", a)
 	}
 }
 

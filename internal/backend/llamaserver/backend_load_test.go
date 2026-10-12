@@ -246,7 +246,7 @@ func TestLoadSurvivesMissingFiguresAndProbeTrouble(t *testing.T) {
 		wantLog  string
 	}{
 		{"the probe has no figure", func(h *harness) { h.probe.err = measure.ErrNoFigure }, []int{4242}, ""},
-		{"the probe fails", func(h *harness) { h.probe.err = errors.New("ps exploded") }, []int{4242}, "memory probe failed"},
+		{"the probe fails", func(h *harness) { h.probe.err = errors.New("ps exploded") }, []int{4242, 4242}, "memory probe failed"},
 		{"there is no probe", func(h *harness) { h.b.opts.Probe = nil }, nil, ""},
 		{"there is no process to measure", func(h *harness) { h.b.opts.AttachPID = 0 }, nil, ""},
 	}
