@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tara-vision/taraengine/internal/backend"
+	"github.com/tara-vision/taraengine/pkg/api"
 	"github.com/tara-vision/taraengine/pkg/client"
 )
 
@@ -26,18 +28,27 @@ func newLoadCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return f.loadFailure(args[0], err)
 			}
-			suffix := ""
-			if m.Memory != nil {
-				suffix = ", " + memory(m.Memory)
-			}
 			p := &printer{w: cmd.OutOrStdout()}
-			p.printf("loaded %s at %d tokens of context%s\n", m.Name, m.Context, suffix)
+			p.printf("%s\n", loadedLine(m))
 			return p.err
 		},
 	}
 	cmd.Flags().IntVar(&window, "context", 0, "context window in tokens (default: the preset's)")
 	cmd.Flags().BoolVar(&force, "force", false, "load a model marked faulty")
 	return cmd
+}
+
+// loadedLine says how a load left the model. A model that sleeps at its window wakes on the next request, and until
+// then has no figure of its own to show.
+func loadedLine(m api.Model) string {
+	if m.Status == string(backend.StatusSleeping) {
+		return fmt.Sprintf("%s sleeps at %d tokens of context; the next request wakes it", m.Name, m.Context)
+	}
+	suffix := ""
+	if m.Memory != nil {
+		suffix = ", " + memory(m.Memory)
+	}
+	return fmt.Sprintf("loaded %s at %d tokens of context%s", m.Name, m.Context, suffix)
 }
 
 // loadFailure explains a refused load. On a load a 409 can only mean that the model is marked faulty, and the way

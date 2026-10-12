@@ -119,7 +119,7 @@ func reportDaemon(ctx context.Context, p *printer, flags *globalFlags, tier stri
 	p.printf("Daemon: taraengine %s on %s, runtime %s, at %s\n", v.Version, v.Platform, v.Runtime.Build, flags.host)
 	if loaded, err := c.Loaded(ctx); err == nil {
 		for _, m := range loaded {
-			p.printf("Loaded: %s at %d tokens\n", m.Name, m.Context)
+			p.printf("Loaded: %s at %d tokens%s\n", m.Name, m.Context, sleepingNote(m.Status))
 		}
 	}
 	reportFailures(ctx, p, c)
@@ -183,4 +183,12 @@ func exitCodeNote(code int) string {
 		return ""
 	}
 	return ", exit code " + strconv.Itoa(code)
+}
+
+// sleepingNote marks a resident model that sleeps until its next request.
+func sleepingNote(status string) string {
+	if status == string(backend.StatusSleeping) {
+		return ", sleeping"
+	}
+	return ""
 }

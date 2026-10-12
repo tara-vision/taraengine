@@ -35,11 +35,12 @@ type ModelDetail struct {
 	LogTail string            `json:"log_tail,omitempty"`
 }
 
-// Loaded is one resident model.
+// Loaded is one resident model. Status is loaded or sleeping; a daemon before 0.2.0 leaves it out.
 type Loaded struct {
 	Name    string  `json:"name"`
 	Context int     `json:"context"`
 	Memory  *Memory `json:"memory,omitempty"`
+	Status  string  `json:"status,omitempty"`
 }
 
 // RuntimeInfo names the backend and its build.

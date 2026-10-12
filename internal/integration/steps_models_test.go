@@ -125,7 +125,8 @@ func checkPs(t *testing.T, s *scenario) {
 		t.Fatalf("loaded: %+v %v", loaded, err)
 	}
 	got := loaded[0]
-	if got.Name != s.entry.Name || got.Context != contextWindow || got.Memory == nil || got.Memory.Bytes <= 0 {
+	if got.Name != s.entry.Name || got.Status != "loaded" || got.Context != contextWindow || got.Memory == nil ||
+		got.Memory.Bytes <= 0 {
 		t.Fatalf("loaded model: %+v (memory %+v)", got, got.Memory)
 	}
 	if src := got.Memory.Source; src != "measured" && src != "estimated" {

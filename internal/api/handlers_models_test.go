@@ -132,10 +132,11 @@ func TestLoadedListsLoadedAndSleepingModelsOnly(t *testing.T) {
 	for _, l := range loaded {
 		byName[l.Name] = l
 	}
-	if s := byName["gemma4:12b"]; s.Context != 4096 || s.Memory != nil {
+	if s := byName["gemma4:12b"]; s.Context != 4096 || s.Memory != nil || s.Status != "sleeping" {
 		t.Fatalf("sleeping model: %+v", s)
 	}
-	if l := byName["gemma4:26b"]; l.Context != 8192 || l.Memory == nil || l.Memory.Bytes != 5 || l.Memory.Source != "estimated" {
+	if l := byName["gemma4:26b"]; l.Context != 8192 || l.Memory == nil || l.Memory.Bytes != 5 ||
+		l.Memory.Source != "estimated" || l.Status != "loaded" {
 		t.Fatalf("loaded model: %+v", l)
 	}
 	h.fake.SetModels()
