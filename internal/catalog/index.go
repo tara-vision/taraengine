@@ -123,3 +123,37 @@ func publish(tmp tempFile, data []byte, path string) error {
 	}
 	return os.Rename(tmp.Name(), path)
 }
+
+// FillNativeContexts reads the native window of every entry that has none from the header of its file, and saves
+// the index once when any entry got one. It returns how many got one, and why each of the others did not, by name;
+// a file that is gone is not reported, since the catalog already shows its model as not pulled. An entry that stays
+// at 0, which also means "not read yet", is read again by the next call.
+func (i *Index) FillNativeContexts() (filled int, missed map[string]error, err error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	entries, err := i.Load()
+	if err != nil {
+		return 0, nil, err
+	}
+	next := make([]IndexEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.NativeContext == 0 {
+			window, readErr := ReadNativeContext(e.Path)
+			switch {
+			case readErr == nil:
+				e.NativeContext = window
+				filled++
+			case !errors.Is(readErr, os.ErrNotExist):
+				if missed == nil {
+					missed = map[string]error{}
+				}
+				missed[e.Name] = readErr
+			}
+		}
+		next = append(next, e)
+	}
+	if filled == 0 {
+		return 0, missed, nil
+	}
+	return filled, missed, i.save(next)
+}

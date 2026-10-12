@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"time"
 
 	"github.com/tara-vision/taraengine/internal/api"
@@ -43,7 +44,8 @@ type Wired struct {
 	Config  config.Config
 }
 
-// Wire builds the catalog, checks the runtime, starts the backend and returns the handler.
+// Wire builds the catalog, checks the runtime, starts the backend, gives the imports of an earlier version their
+// native window, and returns the handler.
 func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
@@ -78,6 +80,7 @@ func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, err
 	if err := be.Start(ctx); err != nil {
 		return nil, err
 	}
+	backfillNativeContexts(ctx, index, be, opts.Logger)
 	platform := platformKey(goruntime.GOOS, goruntime.GOARCH, runtime.DriverVersion(ctx, runtime.ExecRunner))
 	handler := api.New(api.Deps{
 		Backend: be, Catalog: cat, Config: cfg, Fetcher: api.NewHFFetcher(cfg.HFToken),
@@ -91,6 +94,27 @@ func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, err
 		Version: version.Version, Build: build, Platform: platform, Logger: opts.Logger,
 	})
 	return &Wired{Handler: handler, Backend: be, Config: cfg}, nil
+}
+
+// backfillNativeContexts gives the imports that an earlier version pulled the window their files were trained for,
+// and has the router re-read the presets when any got one. It runs once the backend holds the data directory, so
+// that no other daemon rewrites the index meanwhile. What fails is logged, and the daemon starts with the presets
+// it has.
+func backfillNativeContexts(ctx context.Context, index *catalog.Index, be *llamaserver.Backend, logger *slog.Logger) {
+	filled, missed, err := index.FillNativeContexts()
+	for _, name := range slices.Sorted(maps.Keys(missed)) {
+		logger.Warn("the native context window of an import is unknown", "model", name, "error", missed[name])
+	}
+	if err != nil {
+		logger.Warn("could not save the native context windows of the imports", "error", err)
+		return
+	}
+	if filled == 0 {
+		return
+	}
+	if err := be.Refresh(ctx); err != nil {
+		logger.Warn("the router did not pick up the native context windows of the imports", "error", err)
+	}
 }
 
 // newBackend is the router backend for the catalog: it supervises llama-server from runtimeDir, or attaches to the
