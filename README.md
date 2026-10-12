@@ -186,10 +186,11 @@ done gemma4:12b
 A model from `hf://` or from a local path is named after its file without `.gguf`, has no tier and no promise of a
 tuned preset, and its capabilities are marked `(inferred)`: taraengine reads them from the chat template while the
 model runs and keeps them, so `taraengine list` still shows them after the model stops. Its native context window
-comes from the file's header when it is pulled, and the window it runs at is never larger. A local file is linked,
-not copied, and `taraengine rm` removes the link and never the file. A name that the catalog owns is refused with a
-409, and so is one that llama-server would serve under the same id as another model's name (`gemma4:12b` and
-`gemma4-12b` are one id), and a different file under a name that an import already holds.
+comes from the file's header when it is pulled, and its default window is never larger; a load that asks for another
+window gets that one. A local file is linked, not copied, and `taraengine rm` removes the link and never the file. A
+name that the catalog owns is refused with a 409, and so is one that llama-server would serve under the same id as
+another model's name (`gemma4:12b` and `gemma4-12b` are one id), and a different file under a name that an import
+already holds.
 
 A gated or private repository needs `hf_token` in the configuration, or `TARAENGINE_HF_TOKEN` in the environment of
 `serve`. To use a catalog of your own, put a `registry.yaml` in the data directory; it replaces the built-in one. It
@@ -219,9 +220,10 @@ configuration changes the default, and `context_by_tier` sets it per RAM tier. T
 measured on NVIDIA, as the GPU memory that the driver reports for the model's process. On a Mac the GPU has no
 per-process figure, so the number is the process's resident memory and is labeled `estimated`. A dash means that
 there is no figure.
-A model that a request through `/v1` brings up on its own gets its figure the first time the loaded models are read.
-A model that has slept since its last request (`sleep_idle_seconds`) shows `sleeping` and the figure of its last run;
-the next request wakes it, and `taraengine load` of a sleeping model at its window answers at once.
+A model that a request through `/v1` brings up on its own gets its figure from a later read of the model list
+(`taraengine list`, `taraengine ps` or the API) that finds no load, unload or catalog change under way. A model left
+idle for `sleep_idle_seconds` sleeps: `ps` shows `sleeping` with the figure of its last run, the next request wakes
+it, and `taraengine load` of a sleeping model at its window answers at once.
 
 ## API
 
