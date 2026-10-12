@@ -124,3 +124,40 @@ func TestReleaseNotesReadTheChangelogOfTheRepositoryByDefault(t *testing.T) {
 		t.Fatalf("exit %d, stdout %q, stderr %q for version %s", code, out, errText, m[1])
 	}
 }
+
+// A release candidate carries what the next release will: without text of its own, its notes are the Unreleased
+// section.
+func TestReleaseNotesGiveAPreReleaseTheUnreleasedSection(t *testing.T) {
+	changelog := writeChangelog(t, sampleChangelog)
+	cases := []struct{ name, tag string }{
+		{"a candidate of a version with no section", "v0.5.0-rc.1"},
+		{"a candidate of a version that has a section", "v0.2.0-rc.2"},
+		{"a pre-release without the v", "0.5.0-beta.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, out, errText := releaseNotes(t, tc.tag, changelog)
+			if want := "### Added\n- an unreleased thing\n"; code != 0 || out != want || errText != "" {
+				t.Fatalf("exit %d, stdout %q, stderr %q, want exit 0 and %q", code, out, errText, want)
+			}
+		})
+	}
+}
+
+func TestReleaseNotesGiveAPreReleaseItsOwnSectionFirst(t *testing.T) {
+	own := "## [0.5.0-rc.1] - 2026-11-15\n\n### Added\n- the candidate's own note\n\n## [0.4.0] - 2026-12-01\n"
+	changelog := writeChangelog(t, strings.Replace(sampleChangelog, "## [0.4.0] - 2026-12-01\n", own, 1))
+	code, out, errText := releaseNotes(t, "v0.5.0-rc.1", changelog)
+	if want := "### Added\n- the candidate's own note\n"; code != 0 || out != want || errText != "" {
+		t.Fatalf("exit %d, stdout %q, stderr %q, want exit 0 and %q", code, out, errText, want)
+	}
+}
+
+func TestReleaseNotesRefuseAPreReleaseWithNothingUnreleased(t *testing.T) {
+	changelog := writeChangelog(t, strings.Replace(sampleChangelog, "### Added\n- an unreleased thing\n", "", 1))
+	code, out, errText := releaseNotes(t, "v0.5.0-rc.1", changelog)
+	// The phrase, not the word alone: the path of the test's temporary CHANGELOG holds the test's name.
+	if code != 1 || out != "" || !strings.Contains(errText, "a heading for 0.5.0-rc.1 or Unreleased") {
+		t.Fatalf("exit %d, stdout %q, stderr %q, want exit 1 naming 0.5.0-rc.1 and Unreleased", code, out, errText)
+	}
+}
