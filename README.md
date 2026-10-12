@@ -184,9 +184,11 @@ done gemma4:12b
 ```
 
 A model from `hf://` or from a local path is named after its file without `.gguf`, has no tier and no promise of a
-tuned preset, and its capabilities are marked `(inferred)`: taraengine reads them from the chat template. A local file
-is linked, not copied, and `taraengine rm` removes the link and never the file. A name that the catalog owns is refused
-with a 409, and so is one that llama-server would serve under the same id as another model's name (`gemma4:12b` and
+tuned preset, and its capabilities are marked `(inferred)`: taraengine reads them from the chat template while the
+model runs and keeps them, so `taraengine list` still shows them after the model stops. Its native context window
+comes from the file's header when it is pulled, and the window it runs at is never larger. A local file is linked,
+not copied, and `taraengine rm` removes the link and never the file. A name that the catalog owns is refused with a
+409, and so is one that llama-server would serve under the same id as another model's name (`gemma4:12b` and
 `gemma4-12b` are one id), and a different file under a name that an import already holds.
 
 A gated or private repository needs `hf_token` in the configuration, or `TARAENGINE_HF_TOKEN` in the environment of
@@ -208,8 +210,8 @@ taraengine rm gemma4:12b                    # deletes the model and its projecto
 $ taraengine load gemma4:12b
 loaded gemma4:12b at 32768 tokens of context, 10.0 GiB measured
 $ taraengine ps
-NAME        CONTEXT  MEMORY
-gemma4:12b  32768    10.0 GiB measured
+NAME        STATUS  CONTEXT  MEMORY
+gemma4:12b  loaded  32768    10.0 GiB measured
 ```
 
 The context window defaults to 32768 tokens, or to the model's native maximum when that is smaller. `context` in the
@@ -217,6 +219,9 @@ configuration changes the default, and `context_by_tier` sets it per RAM tier. T
 measured on NVIDIA, as the GPU memory that the driver reports for the model's process. On a Mac the GPU has no
 per-process figure, so the number is the process's resident memory and is labeled `estimated`. A dash means that
 there is no figure.
+A model that a request through `/v1` brings up on its own gets its figure the first time the loaded models are read.
+A model that has slept since its last request (`sleep_idle_seconds`) shows `sleeping` and the figure of its last run;
+the next request wakes it, and `taraengine load` of a sleeping model at its window answers at once.
 
 ## API
 
@@ -229,8 +234,8 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 | `GET /api/version` | The taraengine version, the runtime build and the platform. | |
 | `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default and memory. | 503 |
 | `GET /api/models/{name}` | One model in detail: also its native context, a digest, the preset in effect and, after a failure, the end of the server log. | 400, 404, 503 |
-| `GET /api/loaded` | The loaded and sleeping models, with their context window and memory (`bytes` and `source`, `measured` or `estimated`). | 503 |
-| `POST /api/load` | `{"model":"...","context":N,"force":false}`, the last two optional. `context` is from 512 to 4194304 tokens; 0 or no value means the model's usual window. Loads the model and answers with it once it is loaded. | 400, 404, 409 faulty, 502 load failed, 503, 504 over `load_timeout` |
+| `GET /api/loaded` | The loaded and sleeping models, with their status (`loaded` or `sleeping`), context window and memory (`bytes` and `source`, `measured` or `estimated`). | 503 |
+| `POST /api/load` | `{"model":"...","context":N,"force":false}`, the last two optional. `context` is from 512 to 4194304 tokens; 0 or no value means the model's usual window. Loads the model and answers with it once it is up; a model that sleeps at that window is answered at once and wakes on its next request, and a model that is still loading is waited for. | 400, 404, 409 faulty, 502 load failed, 503, 504 over `load_timeout` |
 | `POST /api/unload` | `{"model":"..."}`. Answers 204. | 400, 404, 503 |
 | `POST /api/pull` | `{"model":"..."}` with a catalog name, `hf://owner/repo/file.gguf` or an absolute path. Streams the progress as server-sent events (`resolving`, `downloading`, `verifying`, `done`, `error`); with `?wait=1` it answers once, with `{"status":"done"}`. | 400 bad reference, 404 unknown name, 409 that name is busy or taken by another model or file, 502 |
 | `DELETE /api/models/{name}` | Removes a pulled model and its sibling files. A model imported from a path or `hf://` whose file is already gone is dropped from the catalog all the same. Answers 204. | 400, 404, 409, 503 |
