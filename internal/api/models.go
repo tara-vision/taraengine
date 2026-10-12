@@ -69,14 +69,14 @@ func (s *Server) model(v view) api.Model {
 // catalogModel is what the catalog alone says about an item.
 func (s *Server) catalogModel(it catalog.Item) api.Model {
 	m := api.Model{
-		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size, Capabilities: []string{},
-		CapabilitiesInferred: it.Inferred, NativeContext: it.NativeContext,
+		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size,
+		Capabilities: append([]string{}, it.Capabilities...), CapabilitiesInferred: it.Inferred,
+		NativeContext: it.NativeContext,
 	}
 	tier := otherTier
 	if e := it.Entry; e != nil {
 		m.Family, m.Params, m.Quantization = e.Family, e.Params, e.Quantization
 		m.Tier, m.Default = e.Tier, e.Default
-		m.Capabilities = append(m.Capabilities, e.Capabilities...)
 		tier = e.Tier
 	}
 	if it.Pulled {
@@ -100,23 +100,9 @@ func withStatus(m api.Model, it catalog.Item, st backend.ModelStatus) api.Model 
 		m.Error = fmt.Sprintf("the last load exited with exit code %d", st.ExitCode)
 	}
 	if it.Inferred && st.Props != nil {
-		m.Capabilities = inferred(*st.Props)
+		m.Capabilities = st.Props.Capabilities()
 	}
 	return m
-}
-
-func inferred(p backend.Props) []string {
-	caps := []string{}
-	if p.SupportsTools {
-		caps = append(caps, "tools")
-	}
-	if p.Thinking {
-		caps = append(caps, "thinking")
-	}
-	if p.Vision {
-		caps = append(caps, "vision")
-	}
-	return caps
 }
 
 // resident reports whether the engine keeps the model: loaded, or asleep and ready to wake on the next request.

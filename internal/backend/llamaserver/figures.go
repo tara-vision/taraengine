@@ -29,11 +29,12 @@ type figures struct {
 func (b *Backend) record(ctx context.Context, name string, asleep bool) {
 	got := b.readFigures(ctx, name, want{props: true, memory: !asleep}, slog.LevelWarn)
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	delete(b.props, name)
 	delete(b.memory, name)
 	delete(b.noMemory, name)
 	b.keepLocked(name, got)
+	b.mu.Unlock()
+	b.handOn(name, got)
 }
 
 // recordMissing caches the figures a running model lacks and never replaces one it has, as for a model that a
@@ -48,8 +49,16 @@ func (b *Backend) recordMissing(ctx context.Context, name string, asleep bool, l
 	}
 	got := b.readFigures(ctx, name, need, level)
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.keepLocked(name, got)
+	b.mu.Unlock()
+	b.handOn(name, got)
+}
+
+// handOn gives the props a recording read to OnProps. The caller does not hold b.mu: the callback saves a file.
+func (b *Backend) handOn(name string, got figures) {
+	if got.props != nil && b.opts.OnProps != nil {
+		b.opts.OnProps(name, *got.props)
+	}
 }
 
 // missingLocked says which figures of a running model are due: the props until they are cached, and the memory of

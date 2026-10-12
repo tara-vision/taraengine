@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tara-vision/taraengine/internal/backend"
+	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
 )
@@ -230,5 +231,50 @@ func TestShowOfAnEscapeHatchModel(t *testing.T) {
 	d := decode[api.ModelDetail](t, data)
 	if d.Name != "extra" || d.Status != "pulled" || d.Digest != "" || d.Tier != "" || len(d.Preset) != 1 || d.Preset["c"] != "32768" || d.Size != 1 {
 		t.Fatalf("detail: %+v", d)
+	}
+}
+
+func TestAnImportShowsItsSavedCapabilitiesWhileItDoesNotRun(t *testing.T) {
+	h := newHarness(t, "")
+	p := addHFModel(t, h, "extra", "org/repo", "extra.gguf")
+	if err := h.cat.Index.Add(catalog.IndexEntry{Name: "extra", Repo: "org/repo", File: "extra.gguf", SHA256: "abc", Path: p,
+		Size: 1, Capabilities: []string{"tools", "thinking"}}); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.SetModels(backend.ModelStatus{Name: "extra", Status: backend.StatusPulled})
+	if e := modelsByName(t, h)["extra"]; !e.CapabilitiesInferred || strings.Join(e.Capabilities, ",") != "tools,thinking" {
+		t.Fatalf("an import that does not run shows what it showed when it ran: %+v", e)
+	}
+	h.fake.SetModels(backend.ModelStatus{Name: "extra", Status: backend.StatusLoaded, Props: &backend.Props{Vision: true}})
+	if e := modelsByName(t, h)["extra"]; strings.Join(e.Capabilities, ",") != "vision" {
+		t.Fatalf("live props win while it runs: %+v", e)
+	}
+}
+
+func TestRmAndAReimportDropTheSavedCapabilities(t *testing.T) {
+	h := newHarness(t, "")
+	pullExtra := func() {
+		t.Helper()
+		resp, _ := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: "hf://org/repo/extra.gguf"})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("pull: %d", resp.StatusCode)
+		}
+	}
+	pullExtra()
+	if err := h.cat.Index.SetCapabilities("extra", []string{"tools"}); err != nil {
+		t.Fatal(err)
+	}
+	pullExtra() // the same file again: the index entry is replaced
+	if e := modelsByName(t, h)["extra"]; len(e.Capabilities) != 0 {
+		t.Fatalf("a re-import starts without the capabilities its file showed before: %+v", e)
+	}
+	if err := h.cat.Index.SetCapabilities("extra", []string{"tools"}); err != nil {
+		t.Fatal(err)
+	}
+	if resp, _ := h.do(t, http.MethodDelete, "/api/models/extra", "", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete: %d", resp.StatusCode)
+	}
+	if entries, err := h.cat.Index.Load(); err != nil || len(entries) != 0 {
+		t.Fatalf("rm drops the entry, and the list with it: %+v %v", entries, err)
 	}
 }

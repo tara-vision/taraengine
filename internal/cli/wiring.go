@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tara-vision/taraengine/internal/api"
+	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/config"
@@ -129,8 +130,19 @@ func newBackend(
 		APIKey: opts.AttachKey, ModelsMax: cfg.ModelsMax, SleepIdleSeconds: cfg.SleepIdleSeconds,
 		LoadTimeout: time.Duration(cfg.LoadTimeout) * time.Second, Global: global,
 		Models: presetModels(cat, cfg), State: state.Store{Path: filepath.Join(cfg.DataDir, "state.json")},
-		Probe: measure.Default(goruntime.GOOS, measure.ExecRunner), Logger: opts.Logger, Attach: opts.Attach,
+		Probe: measure.Default(goruntime.GOOS, measure.ExecRunner), OnProps: saveCapabilities(cat.Index, opts.Logger),
+		Logger: opts.Logger, Attach: opts.Attach,
 	})
+}
+
+// saveCapabilities keeps what a running import showed it can do in the index, so the catalog still knows it after
+// the model stops. A registry model is not in the index, and the index leaves it alone.
+func saveCapabilities(index *catalog.Index, logger *slog.Logger) func(string, backend.Props) {
+	return func(name string, props backend.Props) {
+		if err := index.SetCapabilities(name, props.Capabilities()); err != nil {
+			logger.Warn("could not save the capabilities of an import", "model", name, "error", err)
+		}
+	}
 }
 
 // platformKey names the build this machine runs: the lock's key, or the bare OS and architecture where this

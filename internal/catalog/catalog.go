@@ -3,6 +3,7 @@ package catalog
 import (
 	"errors"
 	"os"
+	"slices"
 
 	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
@@ -22,6 +23,9 @@ type Item struct {
 	// NativeContext is the window the model was trained for, 0 when it is unknown: the registry's for a catalog
 	// model, and for an import the one its file's header gave when it was pulled.
 	NativeContext int
+	// Capabilities is what the model can do: the registry's list for a catalog model, and for an import what it
+	// showed the last time it ran.
+	Capabilities []string
 	// Problem says why the file of an imported model is not taken for a present one although it is not simply
 	// gone: the catalog could not examine it (a permission, a path below a file), it is not a regular file, or the
 	// daemon cannot read it. Only the catalog sets it. Such a model is not pulled, and stays in the list, so that it
@@ -71,6 +75,7 @@ func (c Catalog) Find(name string) (Item, bool, error) {
 func (c Catalog) fromEntry(e *registry.Entry) Item {
 	it := Item{
 		Name: e.Name, Entry: e, Size: e.Size, ModelPath: c.Store.Path(e.HFRepo, e.File), NativeContext: e.Context,
+		Capabilities: slices.Clone(e.Capabilities),
 	}
 	it.Pulled = c.Store.Exists(e.HFRepo, e.File)
 	if e.MMProj != nil && c.Store.Exists(e.HFRepo, e.MMProj.File) {
@@ -89,6 +94,7 @@ func (c Catalog) fromEntry(e *registry.Entry) Item {
 func fromIndex(e IndexEntry) Item {
 	it := Item{
 		Name: e.Name, ModelPath: e.Path, Local: e.Repo == "", Inferred: true, Size: e.Size, NativeContext: e.NativeContext,
+		Capabilities: slices.Clone(e.Capabilities),
 	}
 	info, err := os.Stat(e.Path)
 	switch {

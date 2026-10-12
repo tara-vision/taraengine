@@ -8,21 +8,23 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 )
 
 // IndexEntry is a model that came in through the escape hatch: an hf:// pull (Repo and File set) or a local file
 // (Repo empty, Path the link under models/local). NativeContext is the window the file's header gave when it was
-// pulled, 0 when it gave none.
+// pulled, 0 when it gave none, and Capabilities what the model showed it can do the last time it ran.
 type IndexEntry struct {
-	Name          string `json:"name"`
-	Repo          string `json:"repo,omitempty"`
-	File          string `json:"file,omitempty"`
-	SHA256        string `json:"sha256,omitempty"`
-	Path          string `json:"path"`
-	Size          int64  `json:"size"`
-	NativeContext int    `json:"native_context,omitempty"`
+	Name          string   `json:"name"`
+	Repo          string   `json:"repo,omitempty"`
+	File          string   `json:"file,omitempty"`
+	SHA256        string   `json:"sha256,omitempty"`
+	Path          string   `json:"path"`
+	Size          int64    `json:"size"`
+	NativeContext int      `json:"native_context,omitempty"`
+	Capabilities  []string `json:"capabilities,omitempty"`
 }
 
 // Index is models/index.json. Add and Remove hold mu across load and save, so writers that share
@@ -89,7 +91,7 @@ func (i *Index) Remove(name string) error {
 // private to the daemon, which is its only writer and reader.
 func (i *Index) save(entries []IndexEntry) error {
 	sort.Slice(entries, func(a, b int) bool { return entries[a].Name < entries[b].Name })
-	data, _ := json.MarshalIndent(entries, "", "  ") // cannot fail: an entry holds strings and integers
+	data, _ := json.MarshalIndent(entries, "", "  ") // cannot fail: an entry holds strings, integers and a list of strings
 	dir := filepath.Dir(i.Path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("catalog: %w", err)
@@ -156,4 +158,23 @@ func (i *Index) FillNativeContexts() (filled int, missed map[string]error, err e
 		return 0, missed, nil
 	}
 	return filled, missed, i.save(next)
+}
+
+// SetCapabilities saves what a running import showed it can do in its entry, and writes the index only when the list
+// changed. A name the index does not hold is left alone: a registry model, or an import removed while its props were
+// read, which an entry with no file behind it would block from being imported again.
+func (i *Index) SetCapabilities(name string, caps []string) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	entries, err := i.Load()
+	if err != nil {
+		return err
+	}
+	at := slices.IndexFunc(entries, func(e IndexEntry) bool { return e.Name == name })
+	if at < 0 || slices.Equal(entries[at].Capabilities, caps) {
+		return nil
+	}
+	next := slices.Clone(entries)
+	next[at].Capabilities = slices.Clone(caps)
+	return i.save(next)
 }

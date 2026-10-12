@@ -9,10 +9,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/config"
@@ -171,5 +173,55 @@ func TestWireStartsWhenTheRouterDoesNotPickUpTheWindows(t *testing.T) {
 	}
 	if entries, err := index.Load(); err != nil || entries[0].NativeContext != 2048 {
 		t.Fatalf("the window is saved all the same, for the next render: %+v %v", entries, err)
+	}
+}
+
+func TestWireSavesTheCapabilitiesAnImportShowsAndShowsThemAfterARestart(t *testing.T) {
+	dataDir := t.TempDir()
+	index := importedByAnOlderVersion(t, dataDir, "short", 2048)
+	writeFiles(t, pull.Store{Dir: filepath.Join(dataDir, "models")}, "org/tiny", "tiny.gguf")
+	if err := os.WriteFile(filepath.Join(dataDir, "registry.yaml"), []byte(tinyRegistry), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	wired, _ := wireAttached(t, dataDir, attachedConfig(dataDir), debugLogger(io.Discard))
+	for _, name := range []string{"short", "tiny"} {
+		if err := wired.Backend.Load(ctx, name, backend.LoadOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := index.Load()
+	if err != nil || len(entries) != 1 || !slices.Equal(entries[0].Capabilities, []string{"tools", "thinking"}) {
+		t.Fatalf("the import's capabilities are saved, and the registry model gets no entry: %+v %v", entries, err)
+	}
+	if err := wired.Backend.Unload(ctx, "short"); err != nil {
+		t.Fatal(err)
+	}
+	if err := wired.Backend.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := wireAttached(t, dataDir, attachedConfig(dataDir), debugLogger(io.Discard))
+	srv := httptest.NewServer(again.Handler)
+	t.Cleanup(srv.Close)
+	models, err := client.New(srv.URL, "").Models(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range models {
+		if m.Name == "short" && (m.Status != "pulled" || strings.Join(m.Capabilities, ",") != "tools,thinking") {
+			t.Fatalf("after an unload and a restart the import still shows what it can do: %+v", m)
+		}
+	}
+}
+
+func TestSaveCapabilitiesLogsAnIndexItCannotWrite(t *testing.T) {
+	index := &catalog.Index{Path: filepath.Join(t.TempDir(), "index.json")}
+	if err := os.WriteFile(index.Path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var logs syncBuffer
+	saveCapabilities(index, debugLogger(&logs))("mine", backend.Props{SupportsTools: true})
+	if !strings.Contains(logs.String(), "could not save the capabilities of an import") {
+		t.Fatalf("a save that fails is logged:\n%s", logs.String())
 	}
 }
