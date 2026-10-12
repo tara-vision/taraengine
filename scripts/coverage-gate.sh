@@ -10,6 +10,7 @@ gates="
 ./internal/pull:90
 ./internal/runtime:90
 ./internal/catalog:90
+./internal/gguf:90
 ./internal/state:90
 ./internal/backend/llamaserver:90
 ./internal/llamatest:90
