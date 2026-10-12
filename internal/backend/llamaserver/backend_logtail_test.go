@@ -109,6 +109,9 @@ func TestReadLogTail(t *testing.T) {
 		{"a window that opens on a line break", "alpha\nbeta\ngamma\n", 12, 10, "beta\ngamma"},
 		{"one line longer than the window", strings.Repeat("x", 100), 10, 3, strings.Repeat("x", 10)},
 		{"blank lines count as lines", "a\n\n\nb\n", 1024, 3, "\n\nb"},
+		{"control characters dropped, line feeds and tabs kept", "a\x1b[31mred\x1b[0m\r\n\u009b2J\tb\x07\n", 1024, 3,
+			"a[31mred[0m\n2J\tb"},
+		{"a byte that is no character", "a\x9bb\n", 1024, 3, "a\ufffdb"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

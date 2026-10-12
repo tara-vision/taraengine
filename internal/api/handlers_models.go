@@ -34,7 +34,7 @@ func (s *Server) listLoaded(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		m := s.model(v)
-		out = append(out, api.Loaded{Name: m.Name, Context: m.Context, Memory: m.Memory})
+		out = append(out, api.Loaded{Name: m.Name, Context: m.Context, Memory: m.Memory, Status: m.Status})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

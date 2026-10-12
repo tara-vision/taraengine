@@ -51,6 +51,11 @@ func TestWireFormat(t *testing.T) {
 		},
 		{"Loaded without memory", Loaded{Name: "x", Context: 8192}, `{"name":"x","context":8192}`},
 		{
+			"Loaded asleep",
+			Loaded{Name: "x", Context: 8192, Memory: &Memory{Bytes: 1, Source: "measured"}, Status: "sleeping"},
+			`{"name":"x","context":8192,"memory":{"bytes":1,"source":"measured"},"status":"sleeping"}`,
+		},
+		{
 			"Version",
 			Version{Version: "0.1.0", Runtime: RuntimeInfo{Build: "b11514", Backend: "llama.cpp"}, Platform: "linux/amd64/cuda12"},
 			`{"version":"0.1.0","runtime":{"build":"b11514","backend":"llama.cpp"},"platform":"linux/amd64/cuda12"}`,

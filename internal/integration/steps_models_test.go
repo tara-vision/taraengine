@@ -125,7 +125,8 @@ func checkPs(t *testing.T, s *scenario) {
 		t.Fatalf("loaded: %+v %v", loaded, err)
 	}
 	got := loaded[0]
-	if got.Name != s.entry.Name || got.Context != contextWindow || got.Memory == nil || got.Memory.Bytes <= 0 {
+	if got.Name != s.entry.Name || got.Status != "loaded" || got.Context != contextWindow || got.Memory == nil ||
+		got.Memory.Bytes <= 0 {
 		t.Fatalf("loaded model: %+v (memory %+v)", got, got.Memory)
 	}
 	if src := got.Memory.Source; src != "measured" && src != "estimated" {
@@ -155,5 +156,19 @@ func checkRemove(t *testing.T, s *scenario) {
 	}
 	if m := s.model(t); m.Status != "available" {
 		t.Fatalf("after the delete: %+v", m)
+	}
+}
+
+// checkAutoload chats with the model through /v1 before any load. The router brings the model up on its own, and the
+// first read of the loaded list records its memory, so the list shows it loaded and with a figure.
+func checkAutoload(t *testing.T, s *scenario) {
+	s.complete(t)
+	loaded, err := s.c.Loaded(within(t, callTimeout))
+	if err != nil || len(loaded) != 1 {
+		t.Fatalf("loaded after a chat: %+v %v", loaded, err)
+	}
+	if got := loaded[0]; got.Name != s.entry.Name || got.Status != "loaded" || got.Context != contextWindow ||
+		got.Memory == nil || got.Memory.Bytes <= 0 {
+		t.Fatalf("a model a request brought up shows its memory: %+v (memory %+v)", got, got.Memory)
 	}
 }

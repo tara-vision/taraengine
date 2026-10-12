@@ -114,11 +114,18 @@ type scenario struct {
 }
 
 // newScenario writes a catalog of the one test model under the given name and a configuration that points at the
-// verified runtime, starts the daemon on them and returns once it answers. The data directory is private to the test
-// and goes away with it. Its path holds a space, as the default data directory of macOS does
+// verified runtime, with the test model's own window as the default, starts the daemon on them and returns once it
+// answers.
+func newScenario(t *testing.T, env environment, name string) *scenario {
+	t.Helper()
+	return newScenarioAt(t, env, name, contextWindow)
+}
+
+// newScenarioAt is newScenario with another default window. The data directory is private to the test and goes away
+// with it. Its path holds a space, as the default data directory of macOS does
 // (~/Library/Application Support/taraengine), so that every model path of the presets goes through the real router
 // with one.
-func newScenario(t *testing.T, env environment, name string) *scenario {
+func newScenarioAt(t *testing.T, env environment, name string, window int) *scenario {
 	t.Helper()
 	dataDir := filepath.Join(t.TempDir(), "Application Support", "taraengine")
 	if err := os.MkdirAll(dataDir, 0o750); err != nil {
@@ -130,7 +137,7 @@ func newScenario(t *testing.T, env environment, name string) *scenario {
 	cfg.Listen = "127.0.0.1:0"
 	cfg.DataDir = dataDir
 	cfg.RuntimeDir = env.runtimeDir
-	cfg.Context = contextWindow
+	cfg.Context = window
 	cfg.LoadTimeout = loadTimeoutSeconds
 	cfg.PresetGlobal = map[string]string{"n-gpu-layers": "0"} // the test runs on any machine, with or without a GPU
 	configPath := filepath.Join(dataDir, "config.yaml")
@@ -158,16 +165,22 @@ func (s *scenario) modelPath() string {
 // model is what the API says about the scenario's model now.
 func (s *scenario) model(t *testing.T) api.Model {
 	t.Helper()
+	return s.named(t, s.entry.Name)
+}
+
+// named is what the API says about the model of that name now.
+func (s *scenario) named(t *testing.T, name string) api.Model {
+	t.Helper()
 	models, err := s.c.Models(within(t, callTimeout))
 	if err != nil {
 		t.Fatalf("models: %v", err)
 	}
 	for _, m := range models {
-		if m.Name == s.entry.Name {
+		if m.Name == name {
 			return m
 		}
 	}
-	t.Fatalf("%s is not in the catalog: %+v", s.entry.Name, models)
+	t.Fatalf("%s is not in the catalog: %+v", name, models)
 	return api.Model{}
 }
 

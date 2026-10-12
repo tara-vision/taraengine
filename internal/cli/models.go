@@ -60,9 +60,9 @@ func newPsCommand(flags *globalFlags) *cobra.Command {
 			}
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			p := &printer{w: tw}
-			p.printf("NAME\tCONTEXT\tMEMORY\n")
+			p.printf("NAME\tSTATUS\tCONTEXT\tMEMORY\n")
 			for _, m := range loaded {
-				p.printf("%s\t%d\t%s\n", m.Name, m.Context, memory(m.Memory))
+				p.printf("%s\t%s\t%d\t%s\n", m.Name, orDash(m.Status), m.Context, memory(m.Memory))
 			}
 			return errors.Join(p.err, tw.Flush())
 		},
@@ -75,6 +75,14 @@ func memory(m *api.Memory) string {
 		return "-"
 	}
 	return gib(m.Bytes) + " " + m.Source
+}
+
+// orDash is s, or a dash for a value the daemon did not send.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func newRmCommand(flags *globalFlags) *cobra.Command {

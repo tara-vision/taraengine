@@ -256,8 +256,8 @@ func TestClientPropsEscapesModelID(t *testing.T) {
 	if !errors.As(err, &rerr) || rerr.Code != 400 {
 		t.Fatalf("props for an unknown id: %v", err)
 	}
-	if (*calls)[0] != "GET /props?model=a%26b" {
-		t.Fatalf("query not escaped: %s", (*calls)[0])
+	if (*calls)[0] != "GET /props?model=a%26b&autoload=false" {
+		t.Fatalf("query not escaped, or autoload left on: %s", (*calls)[0])
 	}
 }
 

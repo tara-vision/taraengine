@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -173,4 +174,25 @@ func entriesIn(t *testing.T, dir string) []string {
 		names = append(names, de.Name())
 	}
 	return names
+}
+
+func TestIndexKeepsTheNativeWindowOfAnEntry(t *testing.T) {
+	idx := &Index{Path: filepath.Join(t.TempDir(), "models", "index.json")}
+	if err := idx.Add(IndexEntry{Name: "known", Path: "/m/k.gguf", Size: 1, NativeContext: 2048}); err != nil {
+		t.Fatal(err)
+	}
+	if err := idx.Add(IndexEntry{Name: "unknown", Path: "/m/u.gguf", Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(idx.Path)
+	if err != nil || !strings.Contains(string(data), `"native_context": 2048`) || strings.Count(string(data), "native_context") != 1 {
+		t.Fatalf("the window is written when it is known and left out when it is not: %v\n%s", err, data)
+	}
+	older := `[{"name":"old","path":"/m/o.gguf","size":1}]` // an index that taraengine 0.1.0 wrote
+	if err := os.WriteFile(idx.Path, []byte(older), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := idx.Load(); err != nil || len(entries) != 1 || entries[0].NativeContext != 0 {
+		t.Fatalf("an older index reads with the window unknown: %+v %v", entries, err)
+	}
 }

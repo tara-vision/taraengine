@@ -11,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"slices"
 	"time"
 
 	"github.com/tara-vision/taraengine/internal/api"
+	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/config"
@@ -43,7 +45,8 @@ type Wired struct {
 	Config  config.Config
 }
 
-// Wire builds the catalog, checks the runtime, starts the backend and returns the handler.
+// Wire builds the catalog, checks the runtime, starts the backend, gives the imports of an earlier version their
+// native window, and returns the handler.
 func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
@@ -78,6 +81,7 @@ func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, err
 	if err := be.Start(ctx); err != nil {
 		return nil, err
 	}
+	backfillNativeContexts(ctx, index, be, opts.Logger)
 	platform := platformKey(goruntime.GOOS, goruntime.GOARCH, runtime.DriverVersion(ctx, runtime.ExecRunner))
 	handler := api.New(api.Deps{
 		Backend: be, Catalog: cat, Config: cfg, Fetcher: api.NewHFFetcher(cfg.HFToken),
@@ -93,6 +97,27 @@ func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, err
 	return &Wired{Handler: handler, Backend: be, Config: cfg}, nil
 }
 
+// backfillNativeContexts gives the imports that an earlier version pulled the window their files were trained for,
+// and has the router re-read the presets when any got one. It runs once the backend holds the data directory, so
+// that no other daemon rewrites the index meanwhile. What fails is logged, and the daemon starts with the presets
+// it has.
+func backfillNativeContexts(ctx context.Context, index *catalog.Index, be *llamaserver.Backend, logger *slog.Logger) {
+	filled, missed, err := index.FillNativeContexts()
+	for _, name := range slices.Sorted(maps.Keys(missed)) {
+		logger.Warn("the native context window of an import is unknown", "model", name, "error", missed[name])
+	}
+	if err != nil {
+		logger.Warn("could not save the native context windows of the imports", "error", err)
+		return
+	}
+	if filled == 0 {
+		return
+	}
+	if err := be.Refresh(ctx); err != nil {
+		logger.Warn("the router did not pick up the native context windows of the imports", "error", err)
+	}
+}
+
 // newBackend is the router backend for the catalog: it supervises llama-server from runtimeDir, or attaches to the
 // router named in opts. Its preset file is rendered from the models the catalog holds on disk.
 func newBackend(
@@ -105,8 +130,19 @@ func newBackend(
 		APIKey: opts.AttachKey, ModelsMax: cfg.ModelsMax, SleepIdleSeconds: cfg.SleepIdleSeconds,
 		LoadTimeout: time.Duration(cfg.LoadTimeout) * time.Second, Global: global,
 		Models: presetModels(cat, cfg), State: state.Store{Path: filepath.Join(cfg.DataDir, "state.json")},
-		Probe: measure.Default(goruntime.GOOS, measure.ExecRunner), Logger: opts.Logger, Attach: opts.Attach,
+		Probe: measure.Default(goruntime.GOOS, measure.ExecRunner), OnProps: saveCapabilities(cat.Index, opts.Logger),
+		Logger: opts.Logger, Attach: opts.Attach,
 	})
+}
+
+// saveCapabilities keeps what a running import showed it can do in the index, so the catalog still knows it after
+// the model stops. A registry model is not in the index, and the index leaves it alone.
+func saveCapabilities(index *catalog.Index, logger *slog.Logger) func(string, backend.Props) {
+	return func(name string, props backend.Props) {
+		if err := index.SetCapabilities(name, props.Capabilities()); err != nil {
+			logger.Warn("could not save the capabilities of an import", "model", name, "error", err)
+		}
+	}
 }
 
 // platformKey names the build this machine runs: the lock's key, or the bare OS and architecture where this
@@ -149,13 +185,13 @@ func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 			if !it.Pulled {
 				continue
 			}
-			tier, native := otherTier, 0
+			tier := otherTier
 			var extra map[string]string
 			if it.Entry != nil {
-				tier, native = it.Entry.Tier, it.Entry.Context
+				tier = it.Entry.Tier
 				extra = maps.Clone(it.Entry.Preset)
 			}
-			window := cfg.ContextFor(tier, native)
+			window := cfg.ContextFor(tier, it.NativeContext)
 			if override, ok := overrides[it.Name]; ok {
 				window = override
 			}

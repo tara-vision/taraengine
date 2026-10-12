@@ -15,6 +15,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tara-vision/taraengine/pkg/api"
 )
@@ -27,20 +29,24 @@ var ErrIncompleteStream = errors.New("client: the stream ended before the pull f
 
 // Limits on what the client reads from the daemon, and the wire values it matches.
 const (
-	eventBufferSize  = 64 << 10 // the first buffer of a pull stream
-	maxEventSize     = 1 << 20  // no single event may be longer than this
-	maxErrorBody     = 1 << 20  // an error answer is read up to this many bytes
-	eventPrefix      = "data: "
-	mediaEventStream = "text/event-stream"
-	stageDone        = "done"
-	stageError       = "error"
+	eventBufferSize   = 64 << 10 // the first buffer of a pull stream
+	maxEventSize      = 1 << 20  // no single event may be longer than this
+	maxErrorBody      = 1 << 20  // an error answer is read up to this many bytes
+	maxForeignMessage = 300      // the most of a refusal's body that an Error repeats when it is not the engine's
+	eventPrefix       = "data: "
+	mediaEventStream  = "text/event-stream"
+	stageDone         = "done"
+	stageError        = "error"
 )
 
-// Error is an answer that refused a call, or the failure that ended a pull.
+// Error is an answer that refused a call, or the failure that ended a pull. NotJSON says that the refusal's body was
+// not the engine's error JSON, as a proxy's page or a gateway's own answer is not; Message is then its first
+// maxForeignMessage bytes, on one line.
 type Error struct {
 	Status  int
 	Message string
 	Hint    string
+	NotJSON bool
 }
 
 // Error is the message, with the hint in parentheses when there is one.
@@ -239,17 +245,48 @@ func (c *Client) call(ctx context.Context, method, path string, body, out any) e
 	return nil
 }
 
-// decodeError turns a refused answer into an *Error. The message and hint come from the JSON error body when it
-// has one, and a blank message falls back to the HTTP status text.
+// decodeError turns a refused answer into an *Error. A body is the engine's when it decodes as its error JSON with a
+// message that is not blank, and the message and the hint come from there. Any other body is marked NotJSON and
+// shortened to one line, and a body with no text leaves the HTTP status text.
 func decodeError(resp *http.Response) error {
 	// A body that cannot be read in full still leaves the status, so the read error is not reported.
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 	var body api.Error
-	if json.Unmarshal(data, &body) == nil {
-		msg := messageOr(body.Error.Message, resp.StatusCode)
-		return &Error{Status: resp.StatusCode, Message: msg, Hint: body.Error.Hint}
+	if json.Unmarshal(data, &body) == nil && strings.TrimSpace(body.Error.Message) != "" {
+		return &Error{Status: resp.StatusCode, Message: strings.TrimSpace(body.Error.Message), Hint: body.Error.Hint}
 	}
-	return &Error{Status: resp.StatusCode, Message: messageOr(string(data), resp.StatusCode)}
+	message := messageOr(oneLine(data, maxForeignMessage), resp.StatusCode)
+	return &Error{Status: resp.StatusCode, Message: message, NotJSON: true}
+}
+
+// oneLine is text as one line of at most limit bytes: every run of carriage returns, line feeds and tabs becomes one
+// space, every other control character goes, the result is trimmed, and a cut never splits a character.
+func oneLine(data []byte, limit int) string {
+	var b strings.Builder
+	gap := false
+	for _, r := range string(data) {
+		switch {
+		case r == '\r' || r == '\n' || r == '\t':
+			gap = true
+			continue
+		case unicode.IsControl(r):
+			continue
+		}
+		if gap && b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		gap = false
+		b.WriteRune(r)
+	}
+	text := strings.TrimSpace(b.String())
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(text[:cut])
 }
 
 // messageOr is the message without its surrounding white space, or the HTTP status text when it is blank.

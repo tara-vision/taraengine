@@ -118,6 +118,16 @@ func TestDoctorListsWhatIsLoadedAndRecommendsForThisTier(t *testing.T) {
 	}
 }
 
+func TestDoctorSaysWhichLoadedModelSleeps(t *testing.T) {
+	d := startDaemon(t, nil)
+	d.install(t, "gemma4:12b")
+	d.fake.SetModels(backend.ModelStatus{Name: "gemma4:12b", Status: backend.StatusSleeping, Context: 8192})
+	out, err := run(t, "doctor", "--host="+d.srv.URL, "--data-dir", t.TempDir())
+	if err != nil || !strings.Contains(out, "Loaded: gemma4:12b at 8192 tokens, sleeping\n") {
+		t.Fatalf("doctor of a sleeping model: %v\n%s", err, out)
+	}
+}
+
 func TestDoctorSaysWhenTheDaemonRefusesTheKey(t *testing.T) {
 	d := startDaemon(t, func(deps *api.Deps) { deps.Config.APIKey = "sesame" })
 	out, err := run(t, "doctor", "--host="+d.srv.URL, "--data-dir", t.TempDir())

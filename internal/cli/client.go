@@ -95,7 +95,9 @@ func (f *globalFlags) explain(err error) error {
 		return fmt.Errorf("taraengine is not running at %s: start it with `taraengine serve` "+
 			"(or `taraengine doctor` for details)", f.host)
 	case errors.As(err, &refused) && refused.Status == http.StatusUnauthorized:
-		return &client.Error{Status: refused.Status, Message: refused.Message, Hint: keyHint}
+		keyed := *refused
+		keyed.Hint = keyHint
+		return &keyed
 	}
 	return err
 }

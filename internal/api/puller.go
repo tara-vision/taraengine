@@ -116,7 +116,8 @@ func (s *Server) pullRegistry(ctx context.Context, e registry.Entry, emit func(a
 	return nil
 }
 
-// pullHF fetches one file of any repository and records it in the index under its file name.
+// pullHF fetches one file of any repository and records it in the index under its file name, with the window its
+// header gives.
 func (s *Server) pullHF(ctx context.Context, ref pull.Ref, emit func(api.PullEvent)) error {
 	dest, err := s.deps.Catalog.Store.Locate(ref.Repo, ref.File)
 	if err != nil {
@@ -132,6 +133,7 @@ func (s *Server) pullHF(ctx context.Context, ref pull.Ref, emit func(api.PullEve
 	}
 	return s.deps.Catalog.Index.Add(catalog.IndexEntry{
 		Name: ref.Name, Repo: ref.Repo, File: ref.File, SHA256: art.SHA256, Path: dest, Size: art.Size,
+		NativeContext: s.nativeContext(ref.Name, dest),
 	})
 }
 
@@ -141,7 +143,19 @@ func (s *Server) pullLocal(p plan) error {
 	if err != nil {
 		return err
 	}
-	return s.deps.Catalog.Index.Add(catalog.IndexEntry{Name: p.ref.Name, Path: link, Size: p.local.Size()})
+	return s.deps.Catalog.Index.Add(catalog.IndexEntry{
+		Name: p.ref.Name, Path: link, Size: p.local.Size(), NativeContext: s.nativeContext(p.ref.Name, link),
+	})
+}
+
+// nativeContext is the window the header of a pulled file says its model was trained for. A file whose header
+// gives none is still a model: its window stays unknown, and the log says why.
+func (s *Server) nativeContext(name, path string) int {
+	window, err := catalog.ReadNativeContext(path)
+	if err != nil {
+		s.deps.Logger.Warn("the native context window of the model is unknown", "model", name, "error", err)
+	}
+	return window
 }
 
 func (s *Server) fetch(ctx context.Context, art pull.Artifact, dest, file string, emit func(api.PullEvent)) error {

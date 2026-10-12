@@ -85,14 +85,14 @@ func TestPsAndLoadShowWhatTheModelHolds(t *testing.T) {
 		t.Fatalf("load: %v\n%q, want %q", err, out, want)
 	}
 	out, err = run(t, "ps", host)
-	if err != nil || strings.Join(strings.Fields(strings.SplitN(out, "\n", 2)[0]), " ") != "NAME CONTEXT MEMORY" {
+	if err != nil || strings.Join(strings.Fields(strings.SplitN(out, "\n", 2)[0]), " ") != "NAME STATUS CONTEXT MEMORY" {
 		t.Fatalf("ps header: %v\n%s", err, out)
 	}
-	if row := lineWith(out, "gemma4:12b", "4096", "10.0 GiB measured"); row == "" {
+	if row := lineWith(out, "gemma4:12b", "loaded", "4096", "10.0 GiB measured"); row == "" {
 		t.Fatalf("ps row:\n%s", out)
 	}
 	d.fake.SetModels(backend.ModelStatus{Name: "gemma4:12b", Status: backend.StatusLoaded, Context: 4096})
-	if out, err = run(t, "ps", host); err != nil || lineWith(out, "gemma4:12b", "4096", "-") == "" {
+	if out, err = run(t, "ps", host); err != nil || lineWith(out, "gemma4:12b", "loaded", "4096", "-") == "" {
 		t.Fatalf("a model without a figure shows a dash: %v\n%s", err, out)
 	}
 	if out, err = run(t, "load", "gemma4:12b", host); err != nil || out != "loaded gemma4:12b at 4096 tokens of context\n" {
@@ -103,8 +103,36 @@ func TestPsAndLoadShowWhatTheModelHolds(t *testing.T) {
 func TestPsWithNothingLoadedPrintsTheHeaderOnly(t *testing.T) {
 	srv, _ := daemon(t)
 	out, err := run(t, "ps", "--host="+srv.URL)
-	if err != nil || strings.Join(strings.Fields(out), " ") != "NAME CONTEXT MEMORY" {
+	if err != nil || strings.Join(strings.Fields(out), " ") != "NAME STATUS CONTEXT MEMORY" {
 		t.Fatalf("%v %q", err, out)
+	}
+}
+
+func TestPsAndLoadSayWhenAModelSleeps(t *testing.T) {
+	d := startDaemon(t, nil)
+	d.install(t, "gemma4:12b")
+	d.fake.SetModels(backend.ModelStatus{
+		Name: "gemma4:12b", Status: backend.StatusSleeping, Context: 4096,
+		Memory: &backend.Memory{Bytes: 10 << 30, Source: "measured"},
+	})
+	out, err := run(t, "ps", "--host="+d.srv.URL)
+	if row := strings.Fields(lineWith(out, "gemma4:12b")); err != nil ||
+		strings.Join(row, " ") != "gemma4:12b sleeping 4096 10.0 GiB measured" {
+		t.Fatalf("ps of a sleeping model: %v\n%s", err, out)
+	}
+	asleep := stub(t, http.StatusOK, `{"name":"gemma4:12b","status":"sleeping","size":0,"context":4096,`+
+		`"capabilities":[],"capabilities_inferred":false,"default":false,"memory":{"bytes":10737418240,"source":"measured"}}`)
+	out, err = run(t, "load", "gemma4:12b", "--host="+asleep)
+	if want := "gemma4:12b sleeps at 4096 tokens of context; the next request wakes it\n"; err != nil || out != want {
+		t.Fatalf("load of a sleeping model: %v\n%q, want %q", err, out, want)
+	}
+}
+
+func TestPsShowsADashForADaemonThatSendsNoStatus(t *testing.T) {
+	older := stub(t, http.StatusOK, `[{"name":"gemma4:12b","context":4096}]`) // what taraengine 0.1.0 answers
+	out, err := run(t, "ps", "--host="+older)
+	if row := strings.Fields(lineWith(out, "gemma4:12b")); err != nil || strings.Join(row, " ") != "gemma4:12b - 4096 -" {
+		t.Fatalf("ps against a daemon without a status: %v\n%s", err, out)
 	}
 }
 
@@ -207,5 +235,14 @@ func TestARefusedKeyIsAnsweredWithTheCLIsOwnHint(t *testing.T) {
 	}
 	if _, err := run(t, "list", host, "--api-key", "wrong"); err == nil || err.Error() != want {
 		t.Errorf("a wrong key is refused the same way: %v", err)
+	}
+}
+
+func TestARefusedKeyKeepsWhatTheClientFoundOutAboutTheBody(t *testing.T) {
+	gateway := stub(t, http.StatusUnauthorized, "<html>no key</html>")
+	_, err := run(t, "list", "--host="+gateway)
+	var refused *client.Error
+	if !errors.As(err, &refused) || !refused.NotJSON || refused.Hint != keyHint || refused.Message != "<html>no key</html>" {
+		t.Fatalf("the CLI's hint goes on the error the client made, and nothing else changes: %#v", err)
 	}
 }

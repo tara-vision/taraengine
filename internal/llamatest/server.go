@@ -97,8 +97,8 @@ func (s *Server) FailLoad(id string, exitCode int) {
 	s.failLoad[id] = exitCode
 }
 
-// HangLoad makes loads of id stay in loading forever. It scripts POST /models/load only: a model a chat
-// request brings up (an autoload) loads as usual.
+// HangLoad makes loads of id stay in loading until an unload or a reload stops them. It scripts POST
+// /models/load only: a model a chat request brings up (an autoload) loads as usual.
 func (s *Server) HangLoad(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,6 +121,16 @@ func (s *Server) SetStatus(id, status string) {
 	defer s.mu.Unlock()
 	if m, ok := s.models[id]; ok {
 		m.status = status
+	}
+}
+
+// SetFailed ends the model the way the router lists a load that failed: unloaded, failed, with the exit code. A
+// load still pending for it never comes up.
+func (s *Server) SetFailed(id string, exitCode int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m, ok := s.models[id]; ok {
+		m.status, m.failed, m.exitCode = "unloaded", true, exitCode
 	}
 }
 
@@ -182,6 +192,9 @@ func (s *Server) readPresets() {
 		keys := sections[id]
 		seen[id] = true
 		if m, ok := s.models[id]; ok {
+			if running(m.status) && !maps.Equal(m.keys, keys) {
+				m.status = "unloaded" // the router stops a running model whose section changed
+			}
 			m.keys, m.path = keys, keys["model"]
 			continue
 		}
@@ -226,9 +239,14 @@ func (s *Server) load(w http.ResponseWriter, r *http.Request) {
 	id := modelField(r)
 	s.mu.Lock()
 	m, ok := s.models[id]
-	if !ok {
+	switch {
+	case !ok:
 		s.mu.Unlock()
 		writeError(w, http.StatusNotFound, "File Not Found", "not_found_error")
+		return
+	case running(m.status):
+		s.mu.Unlock()
+		writeError(w, http.StatusBadRequest, "model is already running", "invalid_request_error")
 		return
 	}
 	m.status, m.failed = "loading", false
@@ -237,12 +255,19 @@ func (s *Server) load(w http.ResponseWriter, r *http.Request) {
 	go s.finishLoad(id)
 }
 
+// running reports whether the router has a process for a model in that status: loading, loaded or asleep.
+func running(status string) bool {
+	return status == "loading" || status == "loaded" || status == "sleeping"
+}
+
+// finishLoad ends a pending load after the load delay, unless the model is no longer loading by then: a reload may
+// have dropped it, an unload, a reload or SetFailed may have stopped it, and a chat request may have brought it up.
 func (s *Server) finishLoad(id string) {
 	time.Sleep(s.opts.LoadDelay)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.models[id]
-	if !ok || s.hangLoad[id] { // a reload may have dropped the model while its load was pending
+	if !ok || m.status != "loading" || s.hangLoad[id] {
 		return
 	}
 	if code, fail := s.failLoad[id]; fail {
@@ -276,17 +301,18 @@ func (s *Server) unload(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.models[id]
-	if !ok {
+	switch {
+	case !ok:
 		writeError(w, http.StatusBadRequest, "model is not found", "invalid_request_error")
 		return
-	}
-	if m.status != "loaded" && m.status != "sleeping" {
+	case m.status == "loading":
+		m.status = "unloaded" // the router kills a model that is still loading at once
+	case m.status != "loaded" && m.status != "sleeping":
 		writeError(w, http.StatusBadRequest, "model is not running", "invalid_request_error")
 		return
-	}
-	if s.opts.UnloadDelay > 0 {
+	case s.opts.UnloadDelay > 0:
 		go s.finishUnload(id)
-	} else {
+	default:
 		m.status = "unloaded"
 	}
 	writeJSON(w, map[string]bool{"success": true})

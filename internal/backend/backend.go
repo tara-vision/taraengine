@@ -84,3 +84,19 @@ var (
 	ErrLoadFailed   = errors.New("model failed to load")
 	ErrLoadTimeout  = errors.New("model did not load before the timeout")
 )
+
+// Capabilities names what the running model can do, as the catalog lists capabilities: tools, thinking and vision,
+// in that order. The list is empty, never nil, for a model that can do none of them.
+func (p Props) Capabilities() []string {
+	caps := []string{}
+	if p.SupportsTools {
+		caps = append(caps, "tools")
+	}
+	if p.Thinking {
+		caps = append(caps, "thinking")
+	}
+	if p.Vision {
+		caps = append(caps, "vision")
+	}
+	return caps
+}

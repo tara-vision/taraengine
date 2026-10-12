@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `GET /api/loaded` gives each model a `status`, `loaded` or `sleeping`, and `taraengine ps` shows it in a STATUS
+  column; `taraengine load` and `taraengine doctor` say when a model sleeps.
+- An import from `hf://` or a local path takes its native context window from the file's header when it is pulled,
+  and its default window is no larger; imports pulled by 0.1.0 get theirs when the daemon starts.
+- An import keeps the capabilities it showed while it ran, across unloads and restarts.
+- `pkg/client`: `Error.NotJSON` marks a refusal whose body is not the engine's error JSON; such a body is shown as
+  one line of at most 300 bytes.
+
+### Changed
+- The memory figure and the capabilities of a running model are recorded whoever started it: a model that a `/v1`
+  request brings up gets them from a later read of the model list. Reading a model's properties never makes
+  llama-server load it.
+- `POST /api/load` answers at once for a model that sleeps at the requested window, and waits for a model that is
+  still loading instead of refusing the load.
+- The end of llama-server's log that `GET /api/models/{name}` carries keeps line breaks and tabs and drops every other
+  control character.
+
 ## [0.1.0] - 2026-10-09
 
 ### Added

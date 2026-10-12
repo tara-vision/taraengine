@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/measure"
 	"github.com/tara-vision/taraengine/internal/state"
 )
@@ -38,6 +39,9 @@ type Options struct {
 	Logger    *slog.Logger
 	Attach    string // URL of a router already running; nothing is spawned
 	AttachPID int    // the process to measure in attach mode
+	// OnProps, when set, hears the props of every successful props read, under the catalog name, after the backend
+	// has let go of its lock; the serve wiring saves an import's capabilities with it.
+	OnProps func(name string, props backend.Props)
 }
 
 // PresetPath is the preset file inside a data directory.

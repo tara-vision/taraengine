@@ -246,7 +246,7 @@ func TestLoadSurvivesMissingFiguresAndProbeTrouble(t *testing.T) {
 		wantLog  string
 	}{
 		{"the probe has no figure", func(h *harness) { h.probe.err = measure.ErrNoFigure }, []int{4242}, ""},
-		{"the probe fails", func(h *harness) { h.probe.err = errors.New("ps exploded") }, []int{4242}, "memory probe failed"},
+		{"the probe fails", func(h *harness) { h.probe.err = errors.New("ps exploded") }, []int{4242, 4242}, "memory probe failed"},
 		{"there is no probe", func(h *harness) { h.b.opts.Probe = nil }, nil, ""},
 		{"there is no process to measure", func(h *harness) { h.b.opts.AttachPID = 0 }, nil, ""},
 	}
@@ -454,7 +454,7 @@ func TestLoadRefusesAContextTheRouterDoesNotPickUp(t *testing.T) {
 	}
 }
 
-func TestLoadReloadsASleepingModel(t *testing.T) {
+func TestLoadOfASleepingModelAtItsWindowAnswersAtOnce(t *testing.T) {
 	h := newHarness(t, 0)
 	ctx := context.Background()
 	if err := h.b.Load(ctx, "a", backend.LoadOptions{}); err != nil {
@@ -464,11 +464,11 @@ func TestLoadReloadsASleepingModel(t *testing.T) {
 	if err := h.b.Load(ctx, "a", backend.LoadOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if loads, unloads := countRequests(h.fake, "POST /models/load"), countRequests(h.fake, "POST /models/unload"); loads != 2 || unloads != 1 {
-		t.Fatalf("a sleeping model is unloaded and loaded again: loads %d, unloads %d", loads, unloads)
+	if loads, unloads := countRequests(h.fake, "POST /models/load"), countRequests(h.fake, "POST /models/unload"); loads != 1 || unloads != 0 {
+		t.Fatalf("a sleeping model wakes on its first request, so the load sends nothing: loads %d, unloads %d", loads, unloads)
 	}
-	if a := statusOf(t, h.b, "a"); a.Status != backend.StatusLoaded {
-		t.Fatalf("a: %+v", a)
+	if a := statusOf(t, h.b, "a"); a.Status != backend.StatusSleeping || a.Memory == nil || a.Memory.Bytes != 1<<30 {
+		t.Fatalf("the model sleeps on with the figures of its run: %+v", a)
 	}
 }
 

@@ -50,7 +50,7 @@ func checkCLI(t *testing.T, s *scenario) {
 	}
 
 	row = rowFor(t, succeeded(t, s.d.cli(t, "ps"), "ps"), s.entry.Name)
-	if source := row[len(row)-1]; row[1] != window || !slices.Contains(row, "GiB") ||
+	if source := row[len(row)-1]; row[1] != "loaded" || row[2] != window || !slices.Contains(row, "GiB") ||
 		(source != "measured" && source != "estimated") {
 		t.Fatalf("ps shows %v", row)
 	}
