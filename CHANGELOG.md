@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still loading instead of refusing the load.
 - The end of llama-server's log that `GET /api/models/{name}` carries keeps line breaks and tabs and drops every other
   control character.
+- A pre-release tag such as `v0.2.0-rc.1` is released with the `[Unreleased]` section of this file as its notes,
+  unless it has a section of its own.
 
 ## [0.1.0] - 2026-10-09
 
