@@ -24,6 +24,9 @@ entries:
       sha256: d19a11e4fd5019967d9296f77f4d3e139c8903909f70c3a9cf009c9af4b9b88d
       size: 59678240
     min_runtime: b11514
+    preset:
+      cache-type-k: q8_0
+      cache-type-v: q8_0
     notes: Small fast model for helper roles and quick checks.
   - name: gemma4:12b
     family: gemma4
@@ -102,6 +105,9 @@ entries:
     tier: "32"
     default: true
     min_runtime: b11514
+    preset:
+      cache-type-k: q8_0
+      cache-type-v: q8_0
     notes: Top of the 32 GB tier on the first taracode scoreboard; a 30B MoE with 3B active.
   - name: qwen3.6:27b
     family: qwen3.6
@@ -123,6 +129,9 @@ entries:
       sha256: 3d593f9e2788d59bb30d6024706b1efd5219fea466b6397c46159e3540937173
       size: 1680270560
     min_runtime: b11514
+    preset:
+      cache-type-k: q8_0
+      cache-type-v: q8_0
   - name: qwen3.8:27b
     family: qwen3.8
     params: 27B
@@ -143,6 +152,9 @@ entries:
       sha256: c5be331f82fb61f5304adfa00ccd60c6743c8ce52255d66fa863446231d49ba4
       size: 1680271776
     min_runtime: b11514
+    preset:
+      cache-type-k: q8_0
+      cache-type-v: q8_0
     notes: Strongest agentic results in its class (Terminal-Bench 2.1, SWE-bench Pro).
   - name: qwen3.6:35b
     family: qwen3.6
@@ -165,4 +177,7 @@ entries:
       sha256: 606fca331adcbfbdadc107512ce6a7161e84e1646ba0e0018256426f6296877f
       size: 1060038432
     min_runtime: b11514
+    preset:
+      cache-type-k: q8_0
+      cache-type-v: q8_0
     notes: Mixture of experts with the best SWE-bench and TAU2 numbers in class.

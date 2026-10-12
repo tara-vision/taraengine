@@ -131,21 +131,23 @@ The catalog is built into the binary. Each entry pins a Hugging Face file by siz
 projector that lets a model read images and the draft model that speeds it up (speculative decoding), when the
 model has them. A pull fetches all of them.
 
-| Name          | Tier            | Size    | Capabilities            |
-|---------------|-----------------|---------|-------------------------|
-| gemma4:e4b    | small (default) | 4.6 GB  | tools, thinking, vision |
-| gemma4:12b    | 16 (default)    | 7.2 GB  | tools, thinking, vision |
-| gemma4:26b    | 32              | 14.6 GB | tools, thinking, vision |
-| gemma4:31b    | 48              | 18.0 GB | tools, thinking, vision |
-| glm-4.7-flash | 32 (default)    | 18.2 GB | tools, thinking         |
-| qwen3.6:27b   | 32              | 19.1 GB | tools, thinking, vision |
-| qwen3.8:27b   | 32              | 19.0 GB | tools, thinking, vision |
-| qwen3.6:35b   | 48 (default)    | 20.4 GB | tools, thinking, vision |
+| Name          | Tier            | Size    | Capabilities            | KV cache |
+|---------------|-----------------|---------|-------------------------|----------|
+| gemma4:e4b    | small (default) | 4.6 GB  | tools, thinking, vision | q8_0     |
+| gemma4:12b    | 16 (default)    | 7.2 GB  | tools, thinking, vision | f16      |
+| gemma4:26b    | 32              | 14.6 GB | tools, thinking, vision | f16      |
+| gemma4:31b    | 48              | 18.0 GB | tools, thinking, vision | f16      |
+| glm-4.7-flash | 32 (default)    | 18.2 GB | tools, thinking         | q8_0     |
+| qwen3.6:27b   | 32              | 19.1 GB | tools, thinking, vision | q8_0     |
+| qwen3.8:27b   | 32              | 19.0 GB | tools, thinking, vision | q8_0     |
+| qwen3.6:35b   | 48 (default)    | 20.4 GB | tools, thinking, vision | q8_0     |
 
-Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. A tier is the
-RAM class a model is meant for. `small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts
-as `16`, `32` or `48`. `(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps
-the license of its authors; read it on the model's Hugging Face page before you use it.
+Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. KV cache is the
+type of the model's attention cache: q8_0 holds less memory than f16 at the same window, and an entry keeps f16 where
+q8_0 costs it speed. `preset_global` can set another for every model. A tier is the RAM class a model is meant for.
+`small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`, `32` or `48`.
+`(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps the license of its
+authors; read it on the model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
