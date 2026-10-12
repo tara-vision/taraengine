@@ -149,13 +149,13 @@ func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 			if !it.Pulled {
 				continue
 			}
-			tier, native := otherTier, 0
+			tier := otherTier
 			var extra map[string]string
 			if it.Entry != nil {
-				tier, native = it.Entry.Tier, it.Entry.Context
+				tier = it.Entry.Tier
 				extra = maps.Clone(it.Entry.Preset)
 			}
-			window := cfg.ContextFor(tier, native)
+			window := cfg.ContextFor(tier, it.NativeContext)
 			if override, ok := overrides[it.Name]; ok {
 				window = override
 			}

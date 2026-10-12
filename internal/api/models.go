@@ -70,19 +70,19 @@ func (s *Server) model(v view) api.Model {
 func (s *Server) catalogModel(it catalog.Item) api.Model {
 	m := api.Model{
 		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size, Capabilities: []string{},
-		CapabilitiesInferred: it.Inferred,
+		CapabilitiesInferred: it.Inferred, NativeContext: it.NativeContext,
 	}
-	tier, native := otherTier, 0
+	tier := otherTier
 	if e := it.Entry; e != nil {
 		m.Family, m.Params, m.Quantization = e.Family, e.Params, e.Quantization
-		m.Tier, m.Default, m.NativeContext = e.Tier, e.Default, e.Context
+		m.Tier, m.Default = e.Tier, e.Default
 		m.Capabilities = append(m.Capabilities, e.Capabilities...)
-		tier, native = e.Tier, e.Context
+		tier = e.Tier
 	}
 	if it.Pulled {
 		m.Status = string(backend.StatusPulled)
 	}
-	m.Context = s.deps.Config.ContextFor(tier, native)
+	m.Context = s.deps.Config.ContextFor(tier, it.NativeContext)
 	return m
 }
 

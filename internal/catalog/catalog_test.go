@@ -256,3 +256,30 @@ func TestListKeepsAnItemWhoseFileCannotBeExamined(t *testing.T) {
 		})
 	}
 }
+
+func TestItemsCarryTheWindowTheirModelWasTrainedFor(t *testing.T) {
+	c, _ := testCatalog(t)
+	gemma, _ := c.Registry.Find("gemma4:12b")
+	local := filepath.Join(t.TempDir(), "mine.gguf")
+	touch(t, local)
+	if err := c.Index.Add(IndexEntry{Name: "mine", Path: local, Size: 1, NativeContext: 2048}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Index.Add(IndexEntry{Name: "plain", Path: local, Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]Item{}
+	for _, it := range items {
+		byName[it.Name] = it
+	}
+	if g := byName["gemma4:12b"]; g.NativeContext != gemma.Context {
+		t.Fatalf("a catalog model has the registry's window: %d, want %d", g.NativeContext, gemma.Context)
+	}
+	if m, p := byName["mine"], byName["plain"]; m.NativeContext != 2048 || p.NativeContext != 0 {
+		t.Fatalf("an import has the window its index entry keeps: %d and %d", m.NativeContext, p.NativeContext)
+	}
+}

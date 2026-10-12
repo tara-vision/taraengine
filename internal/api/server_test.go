@@ -35,6 +35,7 @@ type fakeFetcher struct {
 	artifacts map[string]pull.Artifact // key repo/file
 	fail      string                   // a file name whose fetch fails
 	gateFile  string                   // a file name whose fetch waits for gate
+	bodies    map[string][]byte        // a file name whose fetch writes these bytes in place of the artifact's x's
 	gate      chan struct{}
 	started   chan struct{} // receives one value when a gated fetch begins
 	stopped   chan error    // receives the reason a gated fetch ended without the gate opening
@@ -60,7 +61,11 @@ func (f *fakeFetcher) Fetch(ctx context.Context, art pull.Artifact, dest string,
 	}
 	onProgress(pull.Progress{Stage: "downloading", Bytes: art.Size / 2, Total: art.Size})
 	onProgress(pull.Progress{Stage: "verifying", Bytes: art.Size, Total: art.Size})
-	if err := os.WriteFile(dest, bytes.Repeat([]byte("x"), int(art.Size)), 0o600); err != nil {
+	data := bytes.Repeat([]byte("x"), int(art.Size))
+	if body, ok := f.bodies[art.File]; ok {
+		data = body
+	}
+	if err := os.WriteFile(dest, data, 0o600); err != nil {
 		return err
 	}
 	if err := os.Remove(dest + ".part"); err != nil && !os.IsNotExist(err) {

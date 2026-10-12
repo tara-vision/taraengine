@@ -12,15 +12,17 @@ import (
 	"sync"
 )
 
-// IndexEntry is a model that came in through the escape hatch: an hf:// pull (Repo and File set)
-// or a local file (Repo empty, Path the link under models/local).
+// IndexEntry is a model that came in through the escape hatch: an hf:// pull (Repo and File set) or a local file
+// (Repo empty, Path the link under models/local). NativeContext is the window the file's header gave when it was
+// pulled, 0 when it gave none.
 type IndexEntry struct {
-	Name   string `json:"name"`
-	Repo   string `json:"repo,omitempty"`
-	File   string `json:"file,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
-	Path   string `json:"path"`
-	Size   int64  `json:"size"`
+	Name          string `json:"name"`
+	Repo          string `json:"repo,omitempty"`
+	File          string `json:"file,omitempty"`
+	SHA256        string `json:"sha256,omitempty"`
+	Path          string `json:"path"`
+	Size          int64  `json:"size"`
+	NativeContext int    `json:"native_context,omitempty"`
 }
 
 // Index is models/index.json. Add and Remove hold mu across load and save, so writers that share
@@ -87,7 +89,7 @@ func (i *Index) Remove(name string) error {
 // private to the daemon, which is its only writer and reader.
 func (i *Index) save(entries []IndexEntry) error {
 	sort.Slice(entries, func(a, b int) bool { return entries[a].Name < entries[b].Name })
-	data, _ := json.MarshalIndent(entries, "", "  ") // cannot fail: an entry holds strings and an integer
+	data, _ := json.MarshalIndent(entries, "", "  ") // cannot fail: an entry holds strings and integers
 	dir := filepath.Dir(i.Path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("catalog: %w", err)
