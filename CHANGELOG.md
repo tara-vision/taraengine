@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unless it has a section of its own.
 - The catalog runs a q8_0 KV cache (`cache-type-k` and `cache-type-v`) for gemma4:e4b, glm-4.7-flash, qwen3.6:27b,
   qwen3.8:27b and qwen3.6:35b, which holds less memory at the same window; the README's catalog table names each
-  model's KV cache.
+  model's KV cache. A key set in `preset_global` wins over a catalog model's own preset for that key.
 
 ## [0.1.0] - 2026-10-09
 

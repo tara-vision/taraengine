@@ -41,3 +41,15 @@ func checkPreset(owner string, preset map[string]string) error {
 	}
 	return nil
 }
+
+// presetAliases are the short names of the tuning keys that have one.
+var presetAliases = map[string]string{"ngl": "n-gpu-layers", "fa": "flash-attn", "ctk": "cache-type-k",
+	"ctv": "cache-type-v"}
+
+// CanonicalKey returns a tuning key's long name, so a key and its short name compare equal.
+func CanonicalKey(key string) string {
+	if long, ok := presetAliases[key]; ok {
+		return long
+	}
+	return key
+}

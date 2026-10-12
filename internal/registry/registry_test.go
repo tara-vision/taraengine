@@ -128,3 +128,13 @@ func TestTheCatalogPinsEachModelsKVCache(t *testing.T) {
 		}
 	}
 }
+
+func TestCanonicalKeyNamesAnAliasByItsLongName(t *testing.T) {
+	cases := map[string]string{"ctk": "cache-type-k", "ctv": "cache-type-v", "ngl": "n-gpu-layers", "fa": "flash-attn",
+		"cache-type-k": "cache-type-k", "temp": "temp"}
+	for key, want := range cases {
+		if got := CanonicalKey(key); got != want {
+			t.Errorf("CanonicalKey(%q) = %q, want %q", key, got, want)
+		}
+	}
+}

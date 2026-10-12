@@ -174,6 +174,20 @@ type modelLister = func(ctx context.Context, overrides map[string]int) ([]llamas
 
 // presetModels renders the pulled models of the catalog with their context and registry presets. The draft
 // sibling of a model is part of its preset once it is pulled, which is what turns speculative decoding on.
+// withoutGlobalKeys is a catalog preset without the keys the operator's preset_global sets, in either of their
+// names: the operator's choice applies to every model, the catalog's own included.
+func withoutGlobalKeys(preset, global map[string]string) map[string]string {
+	out := maps.Clone(preset)
+	for key := range preset {
+		for set := range global {
+			if registry.CanonicalKey(key) == registry.CanonicalKey(set) {
+				delete(out, key)
+			}
+		}
+	}
+	return out
+}
+
 func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 	return func(_ context.Context, overrides map[string]int) ([]llamaserver.PresetModel, error) {
 		items, err := cat.List()
@@ -189,7 +203,7 @@ func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 			var extra map[string]string
 			if it.Entry != nil {
 				tier = it.Entry.Tier
-				extra = maps.Clone(it.Entry.Preset)
+				extra = withoutGlobalKeys(it.Entry.Preset, cfg.PresetGlobal)
 			}
 			window := cfg.ContextFor(tier, it.NativeContext)
 			if override, ok := overrides[it.Name]; ok {

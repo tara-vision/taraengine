@@ -562,3 +562,22 @@ func TestWireSaysWhenTheEmbeddedLockIsBroken(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// TestPresetModelsLetPresetGlobalWinOverACatalogPreset: a key the operator sets in preset_global applies to every
+// model, so a catalog preset for the same key, in either of its names, steps aside for it.
+func TestPresetModelsLetPresetGlobalWinOverACatalogPreset(t *testing.T) {
+	cat, _, _ := tinyCatalog(t)
+	cfg := config.Default()
+	cfg.PresetGlobal = map[string]string{"ctk": "f16"}
+	models, err := presetModels(cat, cfg)(context.Background(), nil)
+	if err != nil || models[0].Name != "tiny" {
+		t.Fatalf("models %+v, err %v", models, err)
+	}
+	if _, kept := models[0].Extra["cache-type-k"]; kept {
+		t.Fatalf("preset_global's ctk did not win over the catalog's cache-type-k: %+v", models[0])
+	}
+	cfg.PresetGlobal = map[string]string{"flash-attn": "off"}
+	if models, _ = presetModels(cat, cfg)(context.Background(), nil); models[0].Extra["cache-type-k"] != "q8_0" {
+		t.Fatalf("a preset_global key the catalog does not set dropped its preset: %+v", models[0])
+	}
+}

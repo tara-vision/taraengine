@@ -144,10 +144,11 @@ model has them. A pull fetches all of them.
 
 Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. KV cache is the
 type of the model's attention cache: q8_0 holds less memory than f16 at the same window, and an entry keeps f16 where
-q8_0 costs it speed. `preset_global` can set another for every model. A tier is the RAM class a model is meant for.
-`small` suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`, `32` or `48`.
-`(default)` marks the model that `taraengine doctor` recommends for a tier. Each model keeps the license of its
-authors; read it on the model's Hugging Face page before you use it.
+q8_0 cost it more than a tenth of its speed on the RTX 5090 board. A `cache-type-k` or `cache-type-v` in
+`preset_global` sets another for every model, these included. A tier is the RAM class a model is meant for. `small`
+suits any machine, and a machine with at least 14, 30 or 46 GiB of RAM counts as `16`, `32` or `48`. `(default)` marks
+the model that `taraengine doctor` recommends for a tier. Each model keeps the license of its authors; read it on the
+model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
@@ -305,7 +306,7 @@ Keep the key in the configuration file (with a mode that only you can read) or i
 | `hf_token` | none | A Hugging Face token for gated or private repositories. It is sent to Hugging Face only and never logged. |
 | `load_timeout` | `600` | Seconds that a load may take before it is given up, at least 1. Raise it for a slow disk. |
 | `runtime_dir` | none | A runtime directory to run instead of the pinned build under the data directory. It has to hold the `manifest.json` that `runtime install` writes, and it is verified like the pinned build. |
-| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. Quote numbers. |
+| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
 
 ```yaml
 # ~/.config/taraengine/config.yaml
