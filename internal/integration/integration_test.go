@@ -27,6 +27,7 @@ func TestServePullLoadChat(t *testing.T) {
 		{"runtime", checkRuntime},
 		{"catalog", checkCatalog},
 		{"pull", checkPull},
+		{"autoload", checkAutoload},
 		{"load", checkLoad},
 		{"ps", checkPs},
 		{"chat", checkChat},
@@ -52,5 +53,18 @@ func TestCatalogNameWithAColon(t *testing.T) {
 		{"load", checkLoad},
 		{"chat", checkChat},
 		{"stop", checkStopLoaded},
+	})
+}
+
+// TestImportTakesItsWindowFromTheFile pulls the test model as an import into a daemon whose default window, twice
+// the 2048 tokens the model was trained for, is larger than the model's own: the engine reads the window from the
+// file's header, and the router runs the import at it.
+func TestImportTakesItsWindowFromTheFile(t *testing.T) {
+	s := newScenarioAt(t, requireEnvironment(t), "tinyllama-catalog", 2*trainedWindow)
+	runSteps(t, s, []step{
+		{"import", checkImport},
+		{"load", checkImportLoad},
+		{"capabilities", checkImportCapabilities},
+		{"stop", checkStopIdle},
 	})
 }
