@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-13
+
 ### Added
 - `GET /api/loaded` gives each model a `status`, `loaded` or `sleeping`, and `taraengine ps` shows it in a STATUS
   column; `taraengine load` and `taraengine doctor` say when a model sleeps.
