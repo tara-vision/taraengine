@@ -1,30 +1,121 @@
 # taraengine
 
-The Tara Vision inference engine: a local, privacy-first, OpenAI-compatible server for Gemma, GLM and Qwen
-on NVIDIA Linux machines and Apple Silicon Macs. Built on llama.cpp by ggml-org.
+<p align="center">
+  <strong>The Tara Vision Inference Engine</strong><br>
+  Local, private and OpenAI-compatible: Gemma, GLM and Qwen on NVIDIA Linux machines and Apple Silicon Macs.<br>
+  Built on llama.cpp. Made for taracode. No telemetry, ever.
+</p>
 
-taraengine owns the catalog, the pull, the presets, the pinned runtime, the process supervision, the API and
-the measurement. The math is done by ggml through llama.cpp's server, pinned to one upstream build per release
-and checksum-verified on install. No telemetry, ever.
+<p align="center">
+  <a href="https://github.com/tara-vision/taraengine/releases"><img src="https://img.shields.io/github/v/release/tara-vision/taraengine?style=for-the-badge&logo=github&color=blue" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/sponsors/tara-vision"><img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor tara-vision"></a>
+  <a href="https://github.com/tara-vision/taraengine/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/tara-vision/taraengine/ci.yml?branch=main&style=for-the-badge&logo=github&label=CI" alt="CI"></a>
+  <a href="https://app.codecov.io/github/tara-vision/taraengine"><img src="https://img.shields.io/codecov/c/github/tara-vision/taraengine?branch=main&style=for-the-badge&logo=codecov&logoColor=white&label=coverage" alt="Coverage"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.27-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go Version"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/tara-vision/taraengine/stargazers"><img src="https://img.shields.io/github/stars/tara-vision/taraengine?style=for-the-badge&logo=github&color=yellow" alt="Stars"></a>
+  <a href="https://github.com/tara-vision/taraengine/network/members"><img src="https://img.shields.io/github/forks/tara-vision/taraengine?style=for-the-badge&logo=github&color=orange" alt="Forks"></a>
+  <a href="https://github.com/tara-vision/taraengine/issues"><img src="https://img.shields.io/github/issues/tara-vision/taraengine?style=for-the-badge&logo=github&color=red" alt="Issues"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_Start-blue?style=flat-square" alt="Quick Start"></a>
+  <a href="#commands"><img src="https://img.shields.io/badge/Commands-teal?style=flat-square" alt="Commands"></a>
+  <a href="#models"><img src="https://img.shields.io/badge/Models-purple?style=flat-square" alt="Models"></a>
+  <a href="#api"><img src="https://img.shields.io/badge/API-indigo?style=flat-square" alt="API"></a>
+  <a href="#configuration"><img src="https://img.shields.io/badge/Configuration-green?style=flat-square" alt="Configuration"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/Contributing-orange?style=flat-square" alt="Contributing"></a>
+</p>
+
+---
+
+## Why taraengine?
+
+- **Everything above the kernels** - taraengine owns the catalog, the pull, the presets, the pinned runtime, the
+  process supervision, the API and the measurement; the math is done by ggml through llama.cpp's server
+- **One pinned runtime** - Each release pins exactly one llama.cpp build, downloaded once, hashed against the
+  lock before it is unpacked and checked again every time the engine starts
+- **A curated catalog** - Models pinned by size and sha256, with the projector and the draft model they come
+  with, and a KV cache chosen for each on an RTX 5090 board
+- **OpenAI and Anthropic APIs** - `/v1` is llama-server's surface, proxied as it streams, with tools, thinking
+  and vision where the model has them
+- **Measured** - Every chat answer carries its timings, and `taraengine ps` shows what a loaded model holds in
+  memory, measured on NVIDIA and estimated on a Mac
+- **Privacy-first** - Localhost by default and a Bearer key when you set one; no telemetry, no update checks, and
+  two hosts contacted only when you ask for a download
+- **No account required** - Open source, MIT-licensed; install it and run it
 
 ## Status
 
-This release serves: the pinned runtime, the catalog, the control API and the OpenAI-compatible passthrough.
-taracode's next release runs on it. Service installers and the Homebrew cask come in a later release.
+This release serves the pinned runtime, the catalog with its tuned presets, the control API and the
+OpenAI-compatible passthrough, on Apple Silicon Macs and NVIDIA Linux machines. taracode's next release runs on
+it. The Homebrew cask, the installer script and the service commands come in the next release.
 
-## Quick start
+## Quick Start
+
+### 1. Install taraengine
+
+```sh
+BASE=https://github.com/tara-vision/taraengine/releases/latest/download
+BIN=taraengine-darwin-arm64     # or taraengine-linux-amd64, or taraengine-linux-arm64
+curl -fsSLO $BASE/$BIN && chmod +x $BIN
+sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
+```
+
+[Install](#install) has the verified download (cosign and sha256), the `.deb` and `.rpm` packages, and the build
+from source.
+
+### 2. Install the runtime
 
 ```sh
 taraengine runtime install        # the pinned llama.cpp build for this machine
+```
+
+### 3. Start the engine and pull a model
+
+```sh
 taraengine serve                  # listens on http://127.0.0.1:8272
 taraengine pull gemma4:12b        # in a second terminal
+```
+
+`gemma4:12b` suits 16 GB of RAM. On a smaller machine, pull the model that `taraengine doctor` names, and use that
+name in step 4.
+
+### 4. Ask it something
+
+```sh
 curl http://127.0.0.1:8272/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model":"gemma4:12b","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 The chat request loads the model on first use. `taraengine doctor` shows the machine, the runtime and the daemon, and
 recommends the catalog's model for the RAM it finds: for the machine of the daemon when one answers, and for this
-machine when none does.
+machine when none does. taracode's next release finds the engine at this address without configuration, and other
+OpenAI-compatible clients can use it now; a web page from another origin needs `allowed_origins`.
+
+## Commands
+
+| Command                      | What it does                                                                                                               |
+|------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| `taraengine serve`           | Runs the engine: supervises llama-server and serves the API on the listen address                                          |
+| `taraengine pull <model>`    | Pulls a catalog model with its siblings, or registers another GGUF (`hf://...` or an absolute path)                        |
+| `taraengine list`            | Lists the catalog and the pulled models                                                                                    |
+| `taraengine load <model>`    | Loads a model, optionally at a context window (`--context`) or past a faulty mark (`--force`), and waits until it is ready |
+| `taraengine ps`              | Shows the loaded models and their memory                                                                                   |
+| `taraengine unload <model>`  | Unloads a model                                                                                                            |
+| `taraengine rm <model>`      | Removes a pulled model and its siblings from disk                                                                          |
+| `taraengine doctor`          | Shows the machine, the runtime and the daemon, and names the model for your RAM                                            |
+| `taraengine runtime install` | Downloads, verifies and unpacks the pinned llama.cpp build                                                                 |
+| `taraengine runtime update`  | Moves to the build this taraengine pins                                                                                    |
+| `taraengine runtime status`  | Shows the installed build, and whether it is verified                                                                      |
+| `taraengine version`         | Prints the taraengine version                                                                                              |
+
+The commands that talk to the daemon (`pull`, `list`, `ps`, `load`, `unload`, `rm` and `doctor`) take its address and
+key from the configuration file; `--host`, `--api-key` and `TARAENGINE_API_KEY` win over it, as
+[Configuration](#configuration) explains. `taraengine <command> --help` lists the flags.
 
 ## Install
 
@@ -42,7 +133,7 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
 sha256sum --ignore-missing -c checksums.txt     # on macOS: shasum -a 256 --ignore-missing -c checksums.txt
 chmod +x $BIN
-sudo mv $BIN /usr/local/bin/taraengine
+sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
 ```
 
 `taraengine version` prints the version you installed. The signature covers `checksums.txt`, and the checksums cover
@@ -58,10 +149,11 @@ sudo rpm -i taraengine_<version>_linux_amd64.rpm
 ```
 
 A package installs the binary as `/usr/bin/taraengine` and puts LICENSE and NOTICE under
-`/usr/share/doc/taraengine/`. The Homebrew cask and an installer script come in a later release.
+`/usr/share/doc/taraengine/`. The Homebrew cask, the installer script and the service commands come in the next
+release.
 
-To build from source, clone the repository and run `make build`. `CONTRIBUTING.md` lists the checks that every
-change has to pass.
+To build from source, clone the repository and run `make build`; [Development](#development) lists the other
+targets.
 
 ## Runtime
 
@@ -84,12 +176,12 @@ llama.cpp releases on GitHub, and each taraengine release pins exactly one upstr
 
 The build is chosen for the machine:
 
-| Machine | Build |
-|---------|-------|
-| Apple Silicon | Metal |
-| Linux with an NVIDIA driver of 580 or newer | CUDA 13.4 |
+| Machine                                           | Build     |
+|---------------------------------------------------|-----------|
+| Apple Silicon                                     | Metal     |
+| Linux with an NVIDIA driver of 580 or newer       | CUDA 13.4 |
 | Linux amd64 with an NVIDIA driver of 570 or newer | CUDA 12.8 |
-| Any other Linux machine | CPU |
+| Any other Linux machine                           | CPU       |
 
 The driver version comes from `nvidia-smi`. The Linux arm64 builds are pinned too, but have not been tested on a
 machine. Other systems, such as Intel Macs, are not supported in this release. A CUDA build needs the CUDA runtime
@@ -246,7 +338,7 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 | `POST /api/pull` | `{"model":"..."}` with a catalog name, `hf://owner/repo/file.gguf` or an absolute path. Streams the progress as server-sent events (`resolving`, `downloading`, `verifying`, `done`, `error`); with `?wait=1` it answers once, with `{"status":"done"}`. | 400 bad reference, 404 unknown name, 409 that name is busy or taken by another model or file, 502 |
 | `DELETE /api/models/{name}` | Removes a pulled model and its sibling files. A model imported from a path or `hf://` whose file is already gone is dropped from the catalog all the same. Answers 204. | 400, 404, 409, 503 |
 | `GET /api/doctor` | The machine (GPU, memory, tier, driver), the runtime status and the recommended model per tier. | |
-| `/v1/*` | llama-server's OpenAI and Anthropic API, proxied. | 400 no `model` or not JSON, 401 without the key, 403 foreign origin, 404 model not pulled, 405 any other method but OPTIONS, 409 faulty model, 503 |
+| `/v1/*` | llama-server's OpenAI and Anthropic API, proxied. | 400, 401, 403, 404, 405, 409, 503 |
 
 ```sh
 curl http://127.0.0.1:8272/api/loaded
@@ -385,11 +477,48 @@ What can reach the API:
 - **Logs.** `logs/taraengine.log` and `logs/llama-server.log` in the data directory are readable by you only. taraengine
   does not log prompts or answers, and the supervised `llama-server` runs at warning verbosity.
 
-To report a vulnerability, see `SECURITY.md`.
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Development
+
+```sh
+make build            # Build the binary
+make test             # Run the tests with the race detector
+make coverage-gate    # Check the per-package coverage floors
+make lint             # Run golangci-lint
+make hygiene          # Check dashes, quotes, lab names and Go file sizes
+make integration      # Run the real pinned runtime with a one-megabyte model; needs the network
+make vuln             # Run govulncheck
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) lists the checks that every change has to pass.
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
+and [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+For security issues, please see our [Security Policy](SECURITY.md).
+
+## Sponsoring
+
+taraengine is free, MIT-licensed and built without telemetry or a cloud service. If it saves you time, you can
+[sponsor Tara Vision on GitHub](https://github.com/sponsors/tara-vision) to keep the releases, the catalog and the
+runtime pins coming.
 
 ## Credits
 
 Built on [llama.cpp](https://github.com/ggml-org/llama.cpp) by ggml-org (MIT). `taraengine runtime install` downloads an
-unmodified upstream build, and upstream's LICENSE stays next to it in the data directory. See NOTICE.
+unmodified upstream build, and upstream's LICENSE stays next to it in the data directory. See [NOTICE](NOTICE).
 
-taraengine itself is released under the MIT License, see LICENSE.
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  Built with ❤️ by <a href="https://tara.vision">Tara Vision</a> · Created by <a href="https://github.com/dayanstef">Dejan Stefanoski</a>
+</p>
