@@ -86,7 +86,7 @@ func newServeCommand(flags *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&sf.runtimeDir, "runtime-dir", "",
 		"runtime directory (default: the pinned build under the data directory)")
 	cmd.Flags().BoolVar(&sf.service, "service", false,
-		"run under a service manager: keep stderr to warnings and errors, the full log stays in the data directory")
+		"run under a service manager: install the pinned runtime when it is missing and keep stderr to warnings")
 	cmd.Flags().StringVar(&sf.attach, "attach", "",
 		"attach to a llama-server already running at this URL instead of starting one")
 	cmd.Flags().StringVar(&sf.attachKey, "attach-key", "", "API key of the attached server")
@@ -167,12 +167,19 @@ func startingHandler(ctx context.Context, cfg config.Config, steps *progress, lo
 	})
 }
 
-// start takes the data directory's lock and wires the daemon on it, saying at each step where it is. Once the backend
+// start takes the data directory's lock, installs the pinned runtime when a service manager runs the daemon, and wires
+// the daemon on the lock, saying at each step where it is. An attached daemon needs no runtime. Once the backend
 // adopted the lock, its Stop lets go of it; a lock nobody adopted is let go of here.
 func start(ctx context.Context, cfg config.Config, opts WireOptions, steps *progress) (*Wired, error) {
 	lock, err := llamaserver.LockDataDir(cfg.DataDir)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Service && opts.Attach == "" {
+		if err := ensureRuntime(ctx, cfg, steps, opts.Logger); err != nil {
+			_ = lock.Close()
+			return nil, err
+		}
 	}
 	steps.set(stepStarting)
 	opts.HeldLock = lock
