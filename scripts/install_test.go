@@ -377,7 +377,7 @@ func TestInstallShInstallsTheOpenMPLibraryWithAptGet(t *testing.T) {
 	if !strings.Contains(out, "Installing libgomp1, the OpenMP library that llama.cpp needs") {
 		t.Errorf("the run says what it installs:\n%s", out)
 	}
-	update := strings.Index(log, "sudo apt-get -o DPkg::Lock::Timeout=120 update -qq\n")
+	update := strings.Index(log, "sudo apt-get update -qq\n")
 	install := strings.Index(log, "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq libgomp1\n")
 	binary := strings.Index(log, "taraengine version")
 	if update < 0 || install < update || binary < install {
@@ -498,11 +498,13 @@ func TestInstallShFindsTheOpenMPLibraryInALongListing(t *testing.T) {
 // A package manager that installed the library and still failed, as zypper does when another repository cannot be
 // refreshed, lets the installation go on.
 func TestInstallShGoesOnWhenThePackageManagerFailsAfterInstallingTheLibrary(t *testing.T) {
-	r := newInstallRun(t)
-	r.sealed, r.pathFirst = true, packageManager(t, "zypper", 106)
-	r.env = append(r.env, "FAKE_NO_OPENMP=1", "FAKE_PM_INSTALLS=1")
-	if code, out, log := r.run(t); code != 0 || !strings.Contains(log, "zypper --non-interactive install libgomp1") {
-		t.Fatalf("exit %d\n%s\n%s", code, out, log)
+	for name, code := range map[string]int{"apt-get": 100, "dnf": 1, "zypper": 106} {
+		r := newInstallRun(t)
+		r.sealed, r.pathFirst = true, packageManager(t, name, code)
+		r.env = append(r.env, "FAKE_NO_OPENMP=1", "FAKE_PM_INSTALLS=1")
+		if exit, out, log := r.run(t); exit != 0 || !strings.Contains(log, name+" ") {
+			t.Fatalf("%s %d: exit %d\n%s\n%s", name, code, exit, out, log)
+		}
 	}
 }
 

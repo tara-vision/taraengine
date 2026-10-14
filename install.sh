@@ -126,15 +126,15 @@ has_openmp() {
 
 # ensure_openmp installs libgomp with the system's package manager when the loader cannot find it. It runs before
 # anything else is installed, so a system that cannot get it is left as it was. A package manager that fails after it
-# installed the library, as zypper does when another repository cannot be refreshed, lets the installation go on; apt
-# waits up to two minutes for a lock that unattended upgrades hold on a fresh machine.
+# installed the library, as zypper does when another repository cannot be refreshed, lets the installation go on; apt's
+# install waits up to two minutes for a lock that unattended upgrades hold on a fresh machine.
 ensure_openmp() {
     local package
     has_openmp && return 0
     if command -v apt-get >/dev/null 2>&1; then
         package="libgomp1"
         info "Installing ${package}, the OpenMP library that llama.cpp needs..."
-        as_root apt-get -o DPkg::Lock::Timeout=120 update -qq || true
+        as_root apt-get update -qq || true
         as_root env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq "$package" ||
             has_openmp || openmp_failed "$package"
     elif command -v dnf >/dev/null 2>&1; then
