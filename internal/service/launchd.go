@@ -19,6 +19,7 @@ import (
 const (
 	noteInstalled  = "installed and started the taraengine service"
 	noteRestarted  = "restarted the taraengine service"
+	noteRelinked   = "the taraengine service restarts on the new binary"
 	noteStopped    = "the taraengine service is stopped; `taraengine service start` starts it"
 	noteNextLogin  = "installed the taraengine service; it starts at your next login, or with the first taraengine command"
 	noteNextLoginE = ", for example `taraengine pull gemma4:12b`"
@@ -88,8 +89,9 @@ func (l *Launchd) launchctl(ctx context.Context, args ...string) error {
 
 // Install writes the plist for binary and makes the agent run it. A loaded agent is restarted in place, or loaded
 // again when its definition changed; an agent that is not loaded is loaded. A stopped agent stays stopped. Inside
-// Homebrew's sandbox launchd refuses to load a new agent: the agent then starts at the next login or with the first
-// command, and Install says so and succeeds.
+// Homebrew's sandbox launchctl can neither load an agent nor restart one (a kickstart there blocks): a first install
+// starts at the next login or with the first command, and an upgrade needs no restart, because Homebrew links the new
+// binary before this step and the agent's KeepAlive on that path brings it back on the new binary by itself.
 func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	changed, err := l.writePlist(RenderPlist(binary, l.LogPath()))
 	if err != nil {
@@ -103,6 +105,9 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	case disabled:
 		return noteStopped, nil
 	case l.loaded(ctx) && (!changed || l.Sandboxed):
+		if l.Sandboxed {
+			return noteRelinked, nil
+		}
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
 	case l.loaded(ctx):
 		if err := l.bootout(ctx); err != nil {
