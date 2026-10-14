@@ -136,6 +136,7 @@ func (r *installRun) run(t *testing.T) (int, string, string) {
 
 func TestInstallShInstallsTheLatestReleaseAndStartsTheService(t *testing.T) {
 	r := newInstallRun(t)
+	r.sealed = true // no taraengine of the machine that runs the tests shows through
 	code, out, log := r.run(t)
 	if code != 0 {
 		t.Fatalf("exit %d\n%s", code, out)
