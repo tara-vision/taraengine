@@ -17,8 +17,11 @@ import (
 
 // The sentences Install and Uninstall return.
 const (
-	noteInstalled  = "installed and started the taraengine service"
-	noteRestarted  = "restarted the taraengine service"
+	noteInstalled = "installed and started the taraengine service"
+	noteRestarted = "restarted the taraengine service"
+	noteRelinked  = "the taraengine service restarts on the new binary"
+	noteOldBinary = "the taraengine service runs %s until your next login and %s after it; " +
+		"`taraengine service stop` and `taraengine service start` move it now"
 	noteStopped    = "the taraengine service is stopped; `taraengine service start` starts it"
 	noteNextLogin  = "installed the taraengine service; it starts at your next login, or with the first taraengine command"
 	noteNextLoginE = ", for example `taraengine pull gemma4:12b`"
@@ -62,7 +65,9 @@ func NewLaunchd(run Runner) (*Launchd, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: user id %q: %w", u.Uid, err)
 	}
-	return &Launchd{Run: run, UID: uid, Home: u.HomeDir, Sandboxed: os.Getenv("HOME") != u.HomeDir}, nil
+	// Homebrew's sandbox gives its steps a HOME of their own; a HOME written another way is still the user's.
+	sandboxed := filepath.Clean(os.Getenv("HOME")) != filepath.Clean(u.HomeDir)
+	return &Launchd{Run: run, UID: uid, Home: u.HomeDir, Sandboxed: sandboxed}, nil
 }
 
 // PlistPath is where the agent's definition lives.
@@ -88,8 +93,11 @@ func (l *Launchd) launchctl(ctx context.Context, args ...string) error {
 
 // Install writes the plist for binary and makes the agent run it. A loaded agent is restarted in place, or loaded
 // again when its definition changed; an agent that is not loaded is loaded. A stopped agent stays stopped. Inside
-// Homebrew's sandbox launchd refuses to load a new agent: the agent then starts at the next login or with the first
-// command, and Install says so and succeeds.
+// Homebrew's sandbox launchd refuses to load an agent, and a kickstart there blocked an upgrade for minutes: a first
+// install starts at the next login or with the first command, and an upgrade restarts nothing itself. The old cask's
+// uninstall step stopped the agent after Homebrew unlinked its binary, Homebrew links the new binary before this step,
+// and KeepAlive on that path brings the agent back on it. An agent that another binary's definition loaded keeps that
+// binary until the definition is loaded again, and Install says so.
 func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	changed, err := l.writePlist(RenderPlist(binary, l.LogPath()))
 	if err != nil {
@@ -99,12 +107,18 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	switch {
-	case disabled:
+	if disabled {
 		return noteStopped, nil
-	case l.loaded(ctx) && (!changed || l.Sandboxed):
+	}
+	program, loaded := l.loadedProgram(ctx)
+	switch {
+	case loaded && l.Sandboxed && program != "" && program != binary:
+		return fmt.Sprintf(noteOldBinary, program, binary), nil
+	case loaded && l.Sandboxed:
+		return noteRelinked, nil
+	case loaded && !changed && (program == "" || program == binary):
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
-	case l.loaded(ctx):
+	case loaded:
 		if err := l.bootout(ctx); err != nil {
 			return "", err
 		}
@@ -133,8 +147,23 @@ func (l *Launchd) writePlist(plist []byte) (bool, error) {
 
 // loaded reports whether launchd has the agent loaded.
 func (l *Launchd) loaded(ctx context.Context) bool {
-	_, err := l.Run(ctx, "launchctl", "print", l.target())
-	return err == nil
+	_, loaded := l.loadedProgram(ctx)
+	return loaded
+}
+
+// loadedProgram reports whether launchd has the agent loaded and, when launchctl says, the program that its loaded
+// definition runs.
+func (l *Launchd) loadedProgram(ctx context.Context) (string, bool) {
+	out, err := l.Run(ctx, "launchctl", "print", l.target())
+	if err != nil {
+		return "", false
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		if program, ok := strings.CutPrefix(line, "\tprogram = "); ok {
+			return strings.TrimSpace(program), true
+		}
+	}
+	return "", true
 }
 
 // bootout unloads the agent and waits until launchd has let it go, for goneWait at most. launchctl answers 36,

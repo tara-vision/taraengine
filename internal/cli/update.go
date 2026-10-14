@@ -89,7 +89,8 @@ func update(cmd *cobra.Command, check bool) error {
 	return updateFile(ctx, p, inst, current, latest)
 }
 
-// updateHomebrew hands the update to Homebrew, whose cask restarts the agent on the new binary.
+// updateHomebrew hands the update to Homebrew. Its cask stops the agent after Homebrew unlinks the old binary, and
+// launchd brings the agent back once Homebrew links the new one.
 func updateHomebrew(ctx context.Context, p *printer, inst selfupdate.Install) error {
 	if processEUID() == 0 {
 		return errors.New("a cask is updated as your user, as Homebrew asks: run `taraengine update` without sudo")
