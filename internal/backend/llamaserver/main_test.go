@@ -19,6 +19,8 @@ import (
 // variable of the test reaches a child the backend starts. The helper prints one line and serves
 // /health on --port. Its environment shapes it:
 //
+//	HELPER_FAIL_START     writes this message to stderr and exits with code 127 at once, as llama-server does
+//	                      when the loader cannot find a library it needs
 //	HELPER_NO_HEALTH=1    never listens
 //	HELPER_IGNORE_TERM=1  ignores SIGTERM, so only SIGKILL ends it
 //	HELPER_EXIT_AFTER_MS  exits by itself after that long with HELPER_EXIT_CODE; the clock starts
@@ -37,6 +39,10 @@ func TestMain(m *testing.M) {
 }
 
 func runHelper() {
+	if msg := os.Getenv("HELPER_FAIL_START"); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+		os.Exit(127)
+	}
 	port := "0"
 	for i, a := range os.Args {
 		if a == "--port" && i+1 < len(os.Args) {
