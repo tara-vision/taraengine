@@ -25,7 +25,8 @@
   `systemd-analyze verify` on Linux and `ruby -c` check what they render, and CI requires all three.
 - `install.sh`, `scripts/push-cask.sh` and the package scripts in `packaging/` are tested from Go, in `scripts/`,
   against a fake release and stand-ins for `uname`, `id`, `sudo` and the engine. On Linux, run `go test ./...` once as a
-  user without root: the permission tests need one.
+  user without root: the permission tests need one. In a container, give the run an init process (`docker run --init`),
+  which reaps the processes the supervisor tests kill.
 - A release signs and notarizes the macOS binary with the repository secrets `MACOS_SIGN_P12`, `MACOS_SIGN_PASSWORD`,
   `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_KEY`, and a stable tag pushes the cask to
   `tara-vision/homebrew-taracode` with `HOMEBREW_TAP_TOKEN`. A tag whose run lacks one of the five stops before
