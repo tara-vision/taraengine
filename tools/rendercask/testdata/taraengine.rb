@@ -17,8 +17,8 @@ cask "taraengine" do
 
   binary "taraengine-darwin-arm64", target: "taraengine"
 
-  # Inside Homebrew's sandbox a first install cannot load the agent: it starts at the next login or with the first
-  # taraengine command. An upgrade restarts the agent that runs.
+  # Inside Homebrew's sandbox launchctl can neither load nor restart the agent: a first install starts it at the next
+  # login or with the first taraengine command, and on an upgrade launchd brings it back on the new binary by itself.
   postflight_steps do
     run "{{HOMEBREW_PREFIX}}/bin/taraengine",
         args:           ["service", "install", "--binary", "{{HOMEBREW_PREFIX}}/bin/taraengine"],
@@ -27,7 +27,7 @@ cask "taraengine" do
   end
 
   # This runs after the binary is unlinked, so KeepAlive's PathState lets the agent stay down; an upgrade links the
-  # new binary and the step above restarts the agent on it.
+  # new binary, and the same PathState starts the agent on it.
   uninstall_postflight_steps do
     run "/bin/sh",
         args:         ["-c", "launchctl kill SIGTERM gui/$(id -u)/vision.tara.taraengine 2>/dev/null"],
