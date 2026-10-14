@@ -73,6 +73,7 @@ type Backend struct {
 
 	mu       sync.Mutex // guards the fields below
 	lock     *os.File   // the data directory's lock while the backend is started
+	heldLock *os.File   // a lock the caller took, adopted by the first Start
 	sup      childProcess
 	roster   roster
 	memory   map[string]backend.Memory
@@ -107,6 +108,7 @@ func New(opts Options) (*Backend, error) {
 		memory:     map[string]backend.Memory{},
 		props:      map[string]backend.Props{},
 		noMemory:   map[string]bool{},
+		heldLock:   opts.HeldLock,
 	}, nil
 }
 
@@ -254,12 +256,16 @@ func (b *Backend) Stop(ctx context.Context) error {
 }
 
 // holdDataDir takes the data directory's lock unless the backend holds it already, and reports whether it
-// took it now.
+// took it now. A lock the caller handed over is adopted once; after that the backend takes its own.
 func (b *Backend) holdDataDir() (took bool, err error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.lock != nil {
 		return false, nil
+	}
+	if b.heldLock != nil {
+		b.lock, b.heldLock = b.heldLock, nil
+		return true, nil
 	}
 	lock, err := lockDataDir(b.opts.DataDir)
 	if err != nil {
