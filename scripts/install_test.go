@@ -3,12 +3,14 @@ package scripts
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -287,5 +289,34 @@ func TestInstallShSaysWhatToRetryWhenTheServiceFails(t *testing.T) {
 func TestInstallShParses(t *testing.T) {
 	if out, err := exec.Command("bash", "-n", "../install.sh").CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+func TestInstallShPutsInAFileOnlyItsOwnerChangesWhateverTheUmask(t *testing.T) {
+	previous := syscall.Umask(0o077) // a hardened shell's umask
+	t.Cleanup(func() { syscall.Umask(previous) })
+	for name, needsRoot := range map[string]bool{"a directory the user writes": false, "a directory that needs root": true} {
+		t.Run(name, func(t *testing.T) {
+			r := newInstallRun(t)
+			r.env = append(r.env, "TARAENGINE_NO_SERVICE=1")
+			if needsRoot {
+				r.installDir = filepath.Join(t.TempDir(), "bin")
+				if err := os.Mkdir(r.installDir, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, out, log := r.run(t)
+			bin, staged := filepath.Join(r.installDir, "taraengine"), filepath.Join(r.installDir, ".taraengine.new")
+			info, err := os.Stat(bin)
+			if code != 0 || err != nil || info.Mode().Perm() != 0o755 {
+				t.Fatalf("exit %d, %v: the binary is 0755 whatever the umask, so the service user can run it:\n%s", code, err, out)
+			}
+			if _, err := os.Stat(staged); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("the copy is renamed into place: %v", err)
+			}
+			if needsRoot && (!strings.Contains(log, "sudo install -m 0755 ") || !strings.Contains(log, "sudo mv -f "+staged+" "+bin)) {
+				t.Fatalf("root writes the copy, so root owns the file that root and the service run, and renames it into place:\n%s", log)
+			}
+		})
 	}
 }

@@ -103,7 +103,7 @@ as_root() {
 
 # install_binary downloads the asset of version, checks it and puts it at INSTALL_DIR/taraengine.
 install_binary() {
-    local version="$1" asset="$2" base tmp
+    local version="$1" asset="$2" base tmp staged
     base="${RELEASES}/download/${version}"
     tmp=$(mktemp -d)
     # The path is baked into the trap now: the local variable is gone by the time EXIT fires.
@@ -114,16 +114,20 @@ install_binary() {
         error "This release has no checksums.txt; refusing to install a binary that cannot be verified"
     info "Verifying the checksum..."
     verify_checksum "${tmp}/${BINARY_NAME}" "$asset" "${tmp}/checksums.txt"
-    chmod +x "${tmp}/${BINARY_NAME}"
     info "Installing to ${INSTALL_DIR}/${BINARY_NAME}..."
     if [ ! -d "$INSTALL_DIR" ]; then
         as_root mkdir -p "$INSTALL_DIR"
     fi
+    # A copy with mode 0755, whatever the umask, lands next to the binary and is renamed over it, so the binary changes
+    # in one step. Where root writes, root owns the copy: root and the service run this file.
+    staged="${INSTALL_DIR}/.${BINARY_NAME}.new"
     if [ -w "$INSTALL_DIR" ]; then
-        mv "${tmp}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+        install -m 0755 "${tmp}/${BINARY_NAME}" "$staged"
+        mv -f "$staged" "${INSTALL_DIR}/${BINARY_NAME}"
     else
         warn "Need root to write ${INSTALL_DIR}"
-        as_root mv "${tmp}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
+        as_root install -m 0755 "${tmp}/${BINARY_NAME}" "$staged"
+        as_root mv -f "$staged" "${INSTALL_DIR}/${BINARY_NAME}"
     fi
     info "Installed: $("${INSTALL_DIR}/${BINARY_NAME}" version 2>/dev/null | head -1 || echo unknown)"
     if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
