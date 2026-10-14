@@ -337,8 +337,8 @@ func realTools(t *testing.T) string {
 	dir := t.TempDir()
 	for _, tool := range []string{"awk", "chmod", "curl", "env", "grep", "head", "install", "mkdir", "mktemp", "mv", "rm",
 		"sed", "sha256sum", "shasum"} {
-		if real, err := exec.LookPath(tool); err == nil {
-			if err := os.Symlink(real, filepath.Join(dir, tool)); err != nil {
+		if found, err := exec.LookPath(tool); err == nil {
+			if err := os.Symlink(found, filepath.Join(dir, tool)); err != nil {
 				t.Fatal(err)
 			}
 		}
