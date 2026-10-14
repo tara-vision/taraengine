@@ -16,7 +16,7 @@ func newListCommand(flags *globalFlags) *cobra.Command {
 		Short: "List the catalog and the pulled models",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}
@@ -50,7 +50,7 @@ func newPsCommand(flags *globalFlags) *cobra.Command {
 		Short: "Show the loaded models and their memory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}
@@ -91,7 +91,7 @@ func newRmCommand(flags *globalFlags) *cobra.Command {
 		Short: "Remove a pulled model and its siblings from disk",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}
