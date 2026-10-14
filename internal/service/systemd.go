@@ -105,9 +105,13 @@ func (s *Systemd) Install(ctx context.Context, binary string) (string, error) {
 	if !s.booted() {
 		return noteNoSystemd, nil
 	}
-	if hiddenFromTheUnit(binary) || hiddenFromTheUnit(linkTarget(binary)) {
+	if target := linkTarget(binary); hiddenFromTheUnit(binary) || hiddenFromTheUnit(target) {
+		what := binary
+		if target != binary {
+			what += ", a link to " + target
+		}
 		return "", fmt.Errorf("the service could not run %s: its unit hides /home, /root, /run/user, /tmp and /var/tmp; "+
-			"install the binary elsewhere, such as /usr/local/bin", binary)
+			"install the binary elsewhere, such as /usr/local/bin", what)
 	}
 	unit, err := RenderUnit(binary)
 	if err != nil {

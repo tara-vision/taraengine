@@ -513,12 +513,8 @@ func TestSystemdReportsADirectoryItCannotWriteIn(t *testing.T) {
 // The unit hides /home, /root and /run/user (ProtectHome) and /tmp and /var/tmp (PrivateTmp) from the engine, so a
 // binary there, or a link to one, could never start: Install refuses it before it changes anything.
 func TestSystemdInstallRefusesABinaryTheUnitHides(t *testing.T) {
-	link := filepath.Join(t.TempDir(), "taraengine")
-	if err := os.Symlink("/home/someone/.local/bin/taraengine", link); err != nil {
-		t.Fatal(err)
-	}
 	for _, binary := range []string{"/home/someone/.local/bin/taraengine", "/root/bin/taraengine", "/run/user/1000/taraengine",
-		"/tmp/taraengine", "/var/tmp/bin/taraengine", link} {
+		"/tmp/taraengine", "/var/tmp/bin/taraengine"} {
 		fake := newFakeSystem()
 		s := newSystemd(t, fake)
 		_, err := s.Install(context.Background(), binary)
@@ -557,5 +553,35 @@ func TestLinkTargetFollowsLinksToWhereTheyEnd(t *testing.T) {
 		if got := linkTarget(path); got != want {
 			t.Errorf("linkTarget(%s) = %s, want %s", path, got, want)
 		}
+	}
+}
+
+// A link outside the hidden directories that points into one is refused as well, and the refusal says where it points.
+func TestSystemdInstallRefusesALinkIntoAHiddenDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if hiddenFromTheUnit(dir) { // Linux keeps temporary directories under /tmp, which the unit hides by itself
+		shm, err := os.MkdirTemp("/dev/shm", "taraengine-test-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(shm) })
+		dir = shm
+	}
+	link := filepath.Join(dir, "taraengine")
+	if err := os.Symlink("/home/someone/.local/bin/taraengine", link); err != nil {
+		t.Fatal(err)
+	}
+	if hiddenFromTheUnit(link) {
+		t.Fatalf("the link itself must lie outside the hidden directories: %s", link)
+	}
+	fake := newFakeSystem()
+	s := newSystemd(t, fake)
+	_, err := s.Install(context.Background(), link)
+	want := "the service could not run " + link + ", a link to /home/someone/.local/bin/taraengine: its unit hides"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %q", err, want)
+	}
+	if len(fake.calls) != 0 || exists(s.unitPath()) {
+		t.Fatalf("nothing is changed, got %v", fake.calls)
 	}
 }
