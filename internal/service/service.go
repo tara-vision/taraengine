@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 )
 
@@ -23,9 +24,26 @@ func ExecRunner(ctx context.Context, name string, args ...string) (string, error
 	return string(out), err
 }
 
+// ErrNotInstalled is the answer of a command that needs the service installed.
+var ErrNotInstalled = errors.New("the taraengine service is not installed; `taraengine service install` installs it")
+
+// Manager installs and drives the service on one system.
+type Manager interface {
+	// Install writes the definition for binary and makes the service run it: it starts a service that is not running
+	// and restarts one that is, unless the service was stopped on purpose. It returns a sentence on what it did.
+	Install(ctx context.Context, binary string) (string, error)
+	// Uninstall stops the service and removes the definition, and says where what it leaves behind is.
+	Uninstall(ctx context.Context) (string, error)
+	Start(ctx context.Context) error   // enables and starts it
+	Stop(ctx context.Context) error    // stops and disables it, until a start
+	Restart(ctx context.Context) error // restarts it, or starts it when it does not run
+	State(ctx context.Context) (State, error)
+}
+
 // State is what the service manager says about the service.
 type State struct {
 	Installed  bool     // the definition is in place
+	Loaded     bool     // the manager has the definition loaded
 	Enabled    bool     // it starts at login or boot; false once a stop disabled it
 	Running    bool     // the manager runs it now
 	PID        int      // its process, when it runs
