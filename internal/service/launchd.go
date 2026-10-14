@@ -116,7 +116,7 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 		return fmt.Sprintf(noteOldBinary, program, binary), nil
 	case loaded && l.Sandboxed:
 		return noteRelinked, nil
-	case loaded && !changed:
+	case loaded && !changed && (program == "" || program == binary):
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
 	case loaded:
 		if err := l.bootout(ctx); err != nil {

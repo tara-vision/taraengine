@@ -252,6 +252,17 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 		if err != nil || note != want {
 			t.Fatalf("%q %v", note, err)
 		}
+		if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label}) {
+			t.Fatalf("only reads: %v", fake.calls)
+		}
+	})
+	t.Run("a loaded agent whose program launchctl does not name restarts on the linked binary", func(t *testing.T) {
+		fake := &fakeLaunchctl{loaded: true, running: true, fail: map[string]bool{"bootstrap": true}}
+		l := newLaunchd(t, fake, true)
+		if note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine"); err != nil ||
+			note != "the taraengine service restarts on the new binary" {
+			t.Fatalf("%q %v", note, err)
+		}
 	})
 	t.Run("outside the sandbox a failed load is an error", func(t *testing.T) {
 		fake := &fakeLaunchctl{fail: map[string]bool{"bootstrap": true}}
@@ -571,5 +582,23 @@ func TestNewLaunchdReportsAUserItCannotLookUp(t *testing.T) {
 	currentUser = func() (*user.User, error) { return &user.User{Uid: "S-1-5-21", HomeDir: "/x"}, nil }
 	if _, err := NewLaunchd(ExecRunner); err == nil || !strings.Contains(err.Error(), "user id") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// Outside the sandbox a loaded agent that runs another binary than its plist names is loaded again, even when the plist
+// on disk did not change: the sandboxed install of a cask rewrote it while the agent kept install.sh's binary.
+func TestLaunchdInstallReloadsAnAgentThatRunsAnotherBinary(t *testing.T) {
+	fake := &fakeLaunchctl{loaded: true, running: true, program: "/usr/local/bin/taraengine"}
+	l := newLaunchd(t, fake, false)
+	if _, err := l.writePlist(RenderPlist("/opt/homebrew/bin/taraengine", l.LogPath())); err != nil {
+		t.Fatal(err)
+	}
+	note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
+	if err != nil || note != "restarted the taraengine service" {
+		t.Fatalf("%q %v", note, err)
+	}
+	if slices.Contains(fake.calls, "launchctl kickstart -k gui/501/"+Label) ||
+		!slices.Contains(fake.calls, "launchctl bootout gui/501/"+Label) {
+		t.Fatalf("the definition is loaded again, not the old binary restarted: %v", fake.calls)
 	}
 }

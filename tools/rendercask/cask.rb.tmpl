@@ -22,6 +22,7 @@ cask "taraengine" do
   postflight_steps do
     run "{{HOMEBREW_PREFIX}}/bin/taraengine",
         args:           ["service", "install", "--binary", "{{HOMEBREW_PREFIX}}/bin/taraengine"],
+        print_stdout:   true,
         writable_paths: ["Library/LaunchAgents", "Library/Logs/taraengine"],
         writable_base:  :home
   end
