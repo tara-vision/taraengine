@@ -103,7 +103,7 @@ func shutdownSignals() []os.Signal {
 // or the key: a second daemon started on an address that is in use leaves the data directory as it is, apart from
 // the log directory. Nothing else keeps two daemons with different addresses off one data directory.
 func serve(parent context.Context, cfg config.Config, opts WireOptions) error {
-	logger, closeLog, err := logging.Setup(cfg.DataDir)
+	logger, closeLog, err := logging.Setup(cfg.DataDir, slog.LevelInfo)
 	if err != nil {
 		return err
 	}

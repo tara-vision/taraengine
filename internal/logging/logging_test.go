@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +29,7 @@ func captureStderr(t *testing.T) string {
 func TestSetupWritesTheRotatingFile(t *testing.T) {
 	captureStderr(t)
 	dir := t.TempDir()
-	logger, closeFn, err := Setup(dir)
+	logger, closeFn, err := Setup(dir, slog.LevelInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +45,14 @@ func TestSetupWritesTheRotatingFile(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Setup(blocker); err == nil {
+	if _, _, err := Setup(blocker, slog.LevelInfo); err == nil {
 		t.Fatal("a data dir that is a file must fail")
 	}
 }
 
 func TestSetupEchoesToStderrAtInfoLevel(t *testing.T) {
 	stderr := captureStderr(t)
-	logger, closeFn, err := Setup(t.TempDir())
+	logger, closeFn, err := Setup(t.TempDir(), slog.LevelInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +73,7 @@ func TestSetupEchoesToStderrAtInfoLevel(t *testing.T) {
 func TestSetupKeepsTheLogPrivate(t *testing.T) {
 	captureStderr(t)
 	dir := t.TempDir()
-	logger, closeFn, err := Setup(dir)
+	logger, closeFn, err := Setup(dir, slog.LevelInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestSetupKeepsTheLogPrivate(t *testing.T) {
 func TestSetupRotatesAtTwentyMegabytes(t *testing.T) {
 	captureStderr(t)
 	dir := t.TempDir()
-	logger, closeFn, err := Setup(dir)
+	logger, closeFn, err := Setup(dir, slog.LevelInfo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,5 +111,28 @@ func TestSetupRotatesAtTwentyMegabytes(t *testing.T) {
 	}
 	if len(entries) != 2 {
 		t.Fatalf("21 MB of log lines must leave the live file and one rotated file, got %d entries", len(entries))
+	}
+}
+
+func TestSetupKeepsQuieterLinesOffStderrButWritesThemToTheFile(t *testing.T) {
+	stderr := captureStderr(t)
+	dir := t.TempDir()
+	logger, closeFn, err := Setup(dir, slog.LevelWarn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger.Info("an info line", "k", "v")
+	logger.With("component", "router").Warn("a warning")
+	if err := closeFn(); err != nil {
+		t.Fatal(err)
+	}
+	shown, err := os.ReadFile(stderr)
+	if err != nil || strings.Contains(string(shown), "an info line") || !strings.Contains(string(shown), "a warning") ||
+		!strings.Contains(string(shown), "component=router") {
+		t.Fatalf("stderr carries the warning only, with its attributes: %v %q", err, shown)
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "logs", "taraengine.log"))
+	if err != nil || !strings.Contains(string(kept), "an info line") || !strings.Contains(string(kept), "a warning") {
+		t.Fatalf("the file keeps every line from info up: %v %q", err, kept)
 	}
 }
