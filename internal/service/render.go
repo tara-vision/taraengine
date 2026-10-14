@@ -24,8 +24,10 @@ const linuxConfig = `# taraengine system service configuration. The README's Con
 data_dir: /var/lib/taraengine
 `
 
-// RenderPlist is the LaunchAgent that runs binary as `serve --service`, starts at login, keeps it alive for as long as
-// binary exists, and sends what it prints to logPath. Every path is escaped, so it cannot fail.
+// RenderPlist is the LaunchAgent that runs binary as `serve --service`, starts at login, starts it again after a crash
+// but not after a clean exit, and sends what it prints to logPath. serve exits cleanly on SIGTERM, so a cask upgrade
+// that ends it while the binary is unlinked leaves it down, instead of making launchd try to start a missing binary
+// until it holds the job back. Every path is escaped, so it cannot fail.
 func RenderPlist(binary, logPath string) []byte {
 	return mustRender("launchd.plist.tmpl", map[string]string{"Binary": binary, "Log": logPath})
 }
