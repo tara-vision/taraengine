@@ -6,7 +6,10 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // Label is the launchd label of the agent, and UnitName the systemd unit.
@@ -50,4 +53,26 @@ type State struct {
 	LastExit   string   // how it last ended, as the manager says it, when it knows
 	Definition string   // the path of the plist or the unit
 	Logs       []string // where to read what it wrote
+}
+
+// writeAtomic puts data at path through a temporary file and a rename, so that a reader never sees half a file. The
+// directory is created when it is missing.
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: launchd and systemd read it
+		return fmt.Errorf("service: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, mode); err != nil {
+		return fmt.Errorf("service: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("service: %w", err)
+	}
+	return nil
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

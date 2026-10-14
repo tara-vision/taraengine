@@ -113,19 +113,12 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 
 // writePlist puts the plist and the log directory in place and reports whether the plist changed.
 func (l *Launchd) writePlist(plist []byte) (bool, error) {
-	for _, dir := range []string{filepath.Dir(l.PlistPath()), filepath.Dir(l.LogPath())} {
-		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: launchd reads the user's own agents
-			return false, fmt.Errorf("service: %w", err)
-		}
+	if err := os.MkdirAll(filepath.Dir(l.LogPath()), 0o755); err != nil { //nolint:gosec // G301: the user's own logs
+		return false, fmt.Errorf("service: %w", err)
 	}
 	old, _ := os.ReadFile(l.PlistPath())
-	tmp := l.PlistPath() + ".tmp"
-	if err := os.WriteFile(tmp, plist, 0o644); err != nil { //nolint:gosec // G306: launchd must read the plist
-		return false, fmt.Errorf("service: %w", err)
-	}
-	if err := os.Rename(tmp, l.PlistPath()); err != nil {
-		_ = os.Remove(tmp)
-		return false, fmt.Errorf("service: %w", err)
+	if err := writeAtomic(l.PlistPath(), plist, 0o644); err != nil {
+		return false, err
 	}
 	return !bytes.Equal(old, plist), nil
 }
@@ -145,10 +138,7 @@ func (l *Launchd) disabled(ctx context.Context) (bool, error) {
 	return strings.Contains(out, `"`+Label+`" => disabled`) || strings.Contains(out, `"`+Label+`" => true`), nil
 }
 
-func (l *Launchd) installed() bool {
-	_, err := os.Stat(l.PlistPath())
-	return err == nil
-}
+func (l *Launchd) installed() bool { return exists(l.PlistPath()) }
 
 // Start enables the agent and runs it.
 func (l *Launchd) Start(ctx context.Context) error {
