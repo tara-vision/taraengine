@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -30,10 +31,13 @@ esac
 type installRun struct {
 	os, arch, uid string // what uname -s, uname -m and id -u answer
 	pathFirst     string // a directory that comes before everything else on PATH
-	env           []string
-	release       *installRelease
-	installDir    string
-	log           string
+	// sealed puts on PATH, after the stand-ins, only the real tools that install.sh uses, so that no package manager of
+	// the machine that runs the tests shows through
+	sealed     bool
+	env        []string
+	release    *installRelease
+	installDir string
+	log        string
 }
 
 // installRelease is the release side: a release page leading to tag, and the assets of every tag it serves.
@@ -99,14 +103,20 @@ func (r *installRun) run(t *testing.T) (int, string, string) {
 		"uname": "#!/bin/sh\ncase \"$1\" in -s) echo \"$FAKE_OS\" ;; -m) echo \"$FAKE_ARCH\" ;; esac\n",
 		"id":    "#!/bin/sh\n[ \"$1\" = -u ] && echo \"$FAKE_UID\"\n",
 		"sudo":  "#!/bin/sh\necho \"sudo $*\" >> \"$LOG\"\nchmod u+w \"$INSTALL_DIR\" 2>/dev/null\n[ \"$1\" = -u ] && shift 2\nexec \"$@\"\n",
+		// The loader finds libgomp unless FAKE_NO_OPENMP is set.
+		"ldconfig": "#!/bin/sh\n[ -n \"$FAKE_NO_OPENMP\" ] || echo \"\tlibgomp.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libgomp.so.1\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
+	path := bin + ":" + os.Getenv("PATH")
+	if r.sealed {
+		path = bin + ":" + realTools(t)
+	}
 	cmd := exec.Command("bash", "../install.sh")
 	cmd.Env = append([]string{
-		"PATH=" + strings.TrimPrefix(r.pathFirst+":"+bin+":"+os.Getenv("PATH"), ":"), "HOME=" + t.TempDir(), "LOG=" + r.log,
+		"PATH=" + strings.TrimPrefix(r.pathFirst+":"+path, ":"), "HOME=" + t.TempDir(), "LOG=" + r.log,
 		"FAKE_OS=" + r.os, "FAKE_ARCH=" + r.arch, "FAKE_UID=" + r.uid, "INSTALL_DIR=" + r.installDir,
 		"TARAENGINE_RELEASES=" + srv.URL + "/releases", "TARAENGINE_API=" + srv.URL + "/api",
 		"TARAENGINE_SITE=" + srv.URL + "/site",
@@ -318,5 +328,150 @@ func TestInstallShPutsInAFileOnlyItsOwnerChangesWhateverTheUmask(t *testing.T) {
 				t.Fatalf("root writes the copy, so root owns the file that root and the service run, and renames it into place:\n%s", log)
 			}
 		})
+	}
+}
+
+// realTools is a directory of links to the real tools that install.sh and its stand-ins use, and nothing else.
+func realTools(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, tool := range []string{"awk", "chmod", "curl", "env", "grep", "head", "install", "mkdir", "mktemp", "mv", "rm",
+		"sed", "sha256sum", "shasum"} {
+		if real, err := exec.LookPath(tool); err == nil {
+			if err := os.Symlink(real, filepath.Join(dir, tool)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return dir
+}
+
+// packageManager is a stand-in for a package manager that logs how it was called and exits with code.
+func packageManager(t *testing.T, name string, code int) string {
+	t.Helper()
+	dir := t.TempDir()
+	body := "#!/bin/sh\necho \"" + name + " $*\" >> \"$LOG\"\nexit " + strconv.Itoa(code) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// A Linux system without libgomp gets it from its package manager before anything else is installed: llama.cpp's
+// Linux builds need it, and a minimal Ubuntu has none.
+func TestInstallShInstallsTheOpenMPLibraryWithAptGet(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "apt-get", 0)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 0 {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "Installing libgomp1, the OpenMP library that llama.cpp needs") {
+		t.Errorf("the run says what it installs:\n%s", out)
+	}
+	update := strings.Index(log, "apt-get update -qq\n")
+	install := strings.Index(log, "sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libgomp1\n")
+	binary := strings.Index(log, "taraengine version")
+	if update < 0 || install < update || binary < install {
+		t.Fatalf("apt-get updates, installs libgomp1, and only then the binary comes:\n%s", log)
+	}
+}
+
+func TestInstallShInstallsTheOpenMPLibraryWithDnf(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "dnf", 0)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 0 || !strings.Contains(log, "sudo dnf install -y -q libgomp\n") || !strings.Contains(out, "Installing libgomp,") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+func TestInstallShInstallsTheOpenMPLibraryWithZypper(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "zypper", 0)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 0 || !strings.Contains(log, "sudo zypper --non-interactive install libgomp1\n") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+func TestInstallShStopsWhenTheOpenMPLibraryCannotBeInstalled(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "dnf", 1)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 1 || !strings.Contains(out, "Could not install libgomp, the OpenMP library that llama.cpp needs") {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	if strings.Contains(log, "taraengine ") {
+		t.Fatalf("nothing is installed when the library cannot be:\n%s", log)
+	}
+}
+
+func TestInstallShStopsWithoutAPackageManagerItKnows(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed = true
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 1 || !strings.Contains(out, "taraengine needs libgomp.so.1, the OpenMP library of GCC") {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	if strings.Contains(log, "taraengine ") {
+		t.Fatalf("nothing is installed without the library:\n%s", log)
+	}
+}
+
+func TestInstallShLeavesTheOpenMPLibraryToTheMacAndToASystemThatHasIt(t *testing.T) {
+	for name, r := range map[string]*installRun{"linux with libgomp": newInstallRun(t), "macos": newInstallRun(t)} {
+		r.sealed, r.pathFirst = true, packageManager(t, "apt-get", 0)
+		if name == "macos" {
+			r.os, r.arch = "Darwin", "arm64"
+			r.env = append(r.env, "FAKE_NO_OPENMP=1")
+		}
+		code, out, log := r.run(t)
+		if code != 0 || strings.Contains(log, "apt-get") {
+			t.Fatalf("%s: exit %d, no package manager called\n%s\n%s", name, code, out, log)
+		}
+	}
+}
+
+// A release before v0.3.0 has no service commands, so the script refuses it unless only the binary is asked for.
+func TestInstallShRefusesAReleaseWithoutTheServiceCommands(t *testing.T) {
+	for _, env := range [][]string{{"TARAENGINE_VERSION=v0.2.0"}, nil} {
+		r := newInstallRun(t)
+		r.env = append(r.env, env...)
+		if env == nil {
+			r.release.tag = "v0.2.0" // the latest release is the older one
+		}
+		code, out, log := r.run(t)
+		if code != 1 || !strings.Contains(out, "taraengine v0.2.0 has no service commands, which came with v0.3.0") {
+			t.Fatalf("%v: exit %d\n%s", env, code, out)
+		}
+		if strings.Contains(log, "taraengine ") {
+			t.Fatalf("%v: nothing is installed:\n%s", env, log)
+		}
+	}
+	r := newInstallRun(t)
+	r.env = append(r.env, "TARAENGINE_VERSION=v0.2.0", "TARAENGINE_NO_SERVICE=1")
+	if code, out, _ := r.run(t); code != 0 {
+		t.Fatalf("the binary alone may be any release: exit %d\n%s", code, out)
+	}
+}
+
+// The Linux unit hides /home, /root and /run/user from the service, so a binary there could never start.
+func TestInstallShRefusesADirectoryTheLinuxServiceCannotReach(t *testing.T) {
+	for _, dir := range []string{"/home/someone/.local/bin", "/root/bin", "/run/user/1000/bin"} {
+		r := newInstallRun(t)
+		r.installDir = dir
+		code, out, log := r.run(t)
+		if code != 1 || !strings.Contains(out, "the service could not run "+dir+"/taraengine") {
+			t.Fatalf("%s: exit %d\n%s", dir, code, out)
+		}
+		if log != "" {
+			t.Fatalf("%s: nothing runs:\n%s", dir, log)
+		}
 	}
 }
