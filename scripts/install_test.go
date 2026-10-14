@@ -103,8 +103,10 @@ func (r *installRun) run(t *testing.T) (int, string, string) {
 		"uname": "#!/bin/sh\ncase \"$1\" in -s) echo \"$FAKE_OS\" ;; -m) echo \"$FAKE_ARCH\" ;; esac\n",
 		"id":    "#!/bin/sh\n[ \"$1\" = -u ] && echo \"$FAKE_UID\"\n",
 		"sudo":  "#!/bin/sh\necho \"sudo $*\" >> \"$LOG\"\nchmod u+w \"$INSTALL_DIR\" 2>/dev/null\n[ \"$1\" = -u ] && shift 2\nexec \"$@\"\n",
-		// The loader finds libgomp unless FAKE_NO_OPENMP is set.
-		"ldconfig": "#!/bin/sh\n[ -n \"$FAKE_NO_OPENMP\" ] || echo \"\tlibgomp.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libgomp.so.1\"\n",
+		// The loader finds libgomp unless FAKE_NO_OPENMP is set and no package manager has installed it since; the
+		// listing goes on with FAKE_LIBS_AFTER more libraries, as ldconfig lists them after libgomp.
+		"ldconfig": "#!/bin/sh\nif [ -z \"$FAKE_NO_OPENMP\" ] || [ -f \"$LOG.openmp\" ]; then echo \"\tlibgomp.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libgomp.so.1\"; fi\n" +
+			"i=0\nwhile [ \"$i\" -lt \"${FAKE_LIBS_AFTER:-0}\" ]; do echo \"\tlibcublasLt.so.$i (libc6,x86-64) => /usr/local/cuda/lib64/libcublasLt.so.$i\"; i=$((i+1)); done\n",
 	} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
@@ -336,7 +338,7 @@ func realTools(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	for _, tool := range []string{"awk", "chmod", "curl", "env", "grep", "head", "install", "mkdir", "mktemp", "mv", "rm",
-		"sed", "sha256sum", "shasum"} {
+		"sed", "sha256sum", "shasum", "touch"} {
 		if found, err := exec.LookPath(tool); err == nil {
 			if err := os.Symlink(found, filepath.Join(dir, tool)); err != nil {
 				t.Fatal(err)
@@ -346,11 +348,16 @@ func realTools(t *testing.T) string {
 	return dir
 }
 
-// packageManager is a stand-in for a package manager that logs how it was called and exits with code.
+// packageManager is a stand-in for a package manager that logs how it was called and exits with code. An install
+// that it answers with 0, or with FAKE_PM_INSTALLS set, puts the library where the ldconfig stand-in finds it; an
+// apt-get update exits with FAKE_UPDATE_EXIT.
 func packageManager(t *testing.T, name string, code int) string {
 	t.Helper()
 	dir := t.TempDir()
-	body := "#!/bin/sh\necho \"" + name + " $*\" >> \"$LOG\"\nexit " + strconv.Itoa(code) + "\n"
+	body := "#!/bin/sh\necho \"" + name + " $*\" >> \"$LOG\"\n" +
+		"case \"$*\" in *update*) exit \"${FAKE_UPDATE_EXIT:-0}\" ;; esac\n" +
+		"if [ " + strconv.Itoa(code) + " = 0 ] || [ -n \"$FAKE_PM_INSTALLS\" ]; then touch \"$LOG.openmp\"; fi\n" +
+		"exit " + strconv.Itoa(code) + "\n"
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -370,8 +377,8 @@ func TestInstallShInstallsTheOpenMPLibraryWithAptGet(t *testing.T) {
 	if !strings.Contains(out, "Installing libgomp1, the OpenMP library that llama.cpp needs") {
 		t.Errorf("the run says what it installs:\n%s", out)
 	}
-	update := strings.Index(log, "apt-get update -qq\n")
-	install := strings.Index(log, "sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libgomp1\n")
+	update := strings.Index(log, "sudo apt-get -o DPkg::Lock::Timeout=120 update -qq\n")
+	install := strings.Index(log, "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq libgomp1\n")
 	binary := strings.Index(log, "taraengine version")
 	if update < 0 || install < update || binary < install {
 		t.Fatalf("apt-get updates, installs libgomp1, and only then the binary comes:\n%s", log)
@@ -447,7 +454,7 @@ func TestInstallShRefusesAReleaseWithoutTheServiceCommands(t *testing.T) {
 			r.release.tag = "v0.2.0" // the latest release is the older one
 		}
 		code, out, log := r.run(t)
-		if code != 1 || !strings.Contains(out, "taraengine v0.2.0 has no service commands, which came with v0.3.0") {
+		if code != 1 || !strings.Contains(out, "taraengine v0.2.0 has no service commands, which came with v0.3.0: set TARAENGINE_VERSION to v0.3.0 or later") {
 			t.Fatalf("%v: exit %d\n%s", env, code, out)
 		}
 		if strings.Contains(log, "taraengine ") {
@@ -472,6 +479,60 @@ func TestInstallShRefusesADirectoryTheLinuxServiceCannotReach(t *testing.T) {
 		}
 		if log != "" {
 			t.Fatalf("%s: nothing runs:\n%s", dir, log)
+		}
+	}
+}
+
+// ldconfig lists libgomp before the many libraries named after it, and the check reads the whole listing: a reader
+// that stopped at the match would end ldconfig with SIGPIPE, which pipefail takes for a missing library.
+func TestInstallShFindsTheOpenMPLibraryInALongListing(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "apt-get", 0)
+	r.env = append(r.env, "FAKE_LIBS_AFTER=2000") // about 150 KB after the line, past a pipe's buffer
+	code, out, log := r.run(t)
+	if code != 0 || strings.Contains(log, "apt-get") {
+		t.Fatalf("a listed libgomp needs no package manager: exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+// A package manager that installed the library and still failed, as zypper does when another repository cannot be
+// refreshed, lets the installation go on.
+func TestInstallShGoesOnWhenThePackageManagerFailsAfterInstallingTheLibrary(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "zypper", 106)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1", "FAKE_PM_INSTALLS=1")
+	if code, out, log := r.run(t); code != 0 || !strings.Contains(log, "zypper --non-interactive install libgomp1") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+func TestInstallShGoesOnWhenTheAptGetUpdateFails(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst = true, packageManager(t, "apt-get", 0)
+	r.env = append(r.env, "FAKE_NO_OPENMP=1", "FAKE_UPDATE_EXIT=100")
+	if code, out, log := r.run(t); code != 0 || !strings.Contains(log, "install -y -qq libgomp1") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+func TestInstallShAsRootInstallsTheOpenMPLibraryWithoutSudo(t *testing.T) {
+	r := newInstallRun(t)
+	r.sealed, r.pathFirst, r.uid = true, packageManager(t, "apt-get", 0), "0"
+	r.env = append(r.env, "FAKE_NO_OPENMP=1")
+	code, out, log := r.run(t)
+	if code != 0 || !strings.Contains(log, "apt-get -o DPkg::Lock::Timeout=120 install -y -qq libgomp1") || strings.Contains(log, "sudo") {
+		t.Fatalf("root runs the package manager itself: exit %d\n%s\n%s", code, out, log)
+	}
+}
+
+// Every tag from v0.3.0 on installs with the service; a tag before it, with or without its v, does not.
+func TestInstallShReadsTheTagsAroundTheServiceFloor(t *testing.T) {
+	for tag, refused := range map[string]bool{"v0.3.0-rc.1": false, "v0.10.0": false, "v1.0.0": false, "0.2.0": true, "v0.2.9-rc.1": true} {
+		r := newInstallRun(t)
+		r.env = append(r.env, "TARAENGINE_VERSION="+tag)
+		code, out, _ := r.run(t)
+		if refused != (code == 1 && strings.Contains(out, "has no service commands")) || (!refused && code != 0) {
+			t.Errorf("%s: exit %d\n%s", tag, code, out)
 		}
 	}
 }

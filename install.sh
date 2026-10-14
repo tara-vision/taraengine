@@ -116,31 +116,35 @@ check_service_dir() {
 }
 
 # has_openmp reports whether the loader finds libgomp.so.1, the OpenMP library of GCC that llama.cpp's Linux builds
-# link. ldconfig is not on every user's PATH.
+# link. ldconfig is not on every user's PATH. grep reads the whole listing: one that stopped at the match would end
+# ldconfig with SIGPIPE, which pipefail takes for a missing library.
 has_openmp() {
     local ldconfig
     ldconfig=$(command -v ldconfig || echo /sbin/ldconfig)
-    "$ldconfig" -p 2>/dev/null | grep -q 'libgomp\.so\.1'
+    "$ldconfig" -p 2>/dev/null | grep 'libgomp\.so\.1' >/dev/null
 }
 
 # ensure_openmp installs libgomp with the system's package manager when the loader cannot find it. It runs before
-# anything else is installed, so a system that cannot get it is left as it was.
+# anything else is installed, so a system that cannot get it is left as it was. A package manager that fails after it
+# installed the library, as zypper does when another repository cannot be refreshed, lets the installation go on; apt
+# waits up to two minutes for a lock that unattended upgrades hold on a fresh machine.
 ensure_openmp() {
     local package
     has_openmp && return 0
     if command -v apt-get >/dev/null 2>&1; then
         package="libgomp1"
         info "Installing ${package}, the OpenMP library that llama.cpp needs..."
-        as_root apt-get update -qq || true
-        as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$package" || openmp_failed "$package"
+        as_root apt-get -o DPkg::Lock::Timeout=120 update -qq || true
+        as_root env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq "$package" ||
+            has_openmp || openmp_failed "$package"
     elif command -v dnf >/dev/null 2>&1; then
         package="libgomp"
         info "Installing ${package}, the OpenMP library that llama.cpp needs..."
-        as_root dnf install -y -q "$package" || openmp_failed "$package"
+        as_root dnf install -y -q "$package" || has_openmp || openmp_failed "$package"
     elif command -v zypper >/dev/null 2>&1; then
         package="libgomp1"
         info "Installing ${package}, the OpenMP library that llama.cpp needs..."
-        as_root zypper --non-interactive install "$package" || openmp_failed "$package"
+        as_root zypper --non-interactive install "$package" || has_openmp || openmp_failed "$package"
     else
         error "taraengine needs libgomp.so.1, the OpenMP library of GCC, and this script knows no package manager on this system: install it, then run this script again"
     fi
@@ -236,7 +240,7 @@ main() {
     [ -n "$version" ] || error "Could not determine the version to install"
     info "Version: ${version}"
     if [ "${TARAENGINE_NO_SERVICE:-}" != "1" ] && before_0_3 "$version"; then
-        error "taraengine ${version} has no service commands, which came with v0.3.0: install v0.3.0 or later, or set TARAENGINE_NO_SERVICE=1 for the binary alone"
+        error "taraengine ${version} has no service commands, which came with v0.3.0: set TARAENGINE_VERSION to v0.3.0 or later, or TARAENGINE_NO_SERVICE=1 for the binary alone"
     fi
     if [ "${platform%-*}" = "linux" ]; then
         ensure_openmp
