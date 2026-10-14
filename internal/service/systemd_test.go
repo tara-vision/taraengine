@@ -509,3 +509,19 @@ func TestSystemdReportsADirectoryItCannotWriteIn(t *testing.T) {
 		}
 	})
 }
+
+// The unit hides /home, /root and /run/user from the engine, so a binary there could never start: Install refuses it
+// before it changes anything.
+func TestSystemdInstallRefusesABinaryTheUnitHides(t *testing.T) {
+	for _, binary := range []string{"/home/someone/.local/bin/taraengine", "/root/bin/taraengine", "/run/user/1000/taraengine"} {
+		fake := newFakeSystem()
+		s := newSystemd(t, fake)
+		_, err := s.Install(context.Background(), binary)
+		if err == nil || !strings.Contains(err.Error(), "the service could not run "+binary+": its unit hides /home, /root and /run/user") {
+			t.Fatalf("%s: %v", binary, err)
+		}
+		if len(fake.calls) != 0 || exists(s.unitPath()) {
+			t.Fatalf("%s: nothing is changed, got %v", binary, fake.calls)
+		}
+	}
+}

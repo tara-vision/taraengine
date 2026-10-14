@@ -66,6 +66,17 @@ func (s *Systemd) systemctl(ctx context.Context, args ...string) error {
 	return s.run(ctx, "systemctl", args...)
 }
 
+// hiddenFromTheUnit reports whether path lies in a directory that the unit's ProtectHome hides from the engine.
+func hiddenFromTheUnit(path string) bool {
+	clean := filepath.Clean(path)
+	for _, dir := range []string{"/home", "/root", "/run/user"} {
+		if clean == dir || strings.HasPrefix(clean, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // Install sets up the taraengine user, its directories and, when there is none, its configuration, writes the unit
 // for binary and runs it: a first install, and an upgrade of a service that is enabled, enable and restart it. A
 // service an admin disabled stays disabled, and moves to the new binary when it still runs. On a system without
@@ -73,6 +84,10 @@ func (s *Systemd) systemctl(ctx context.Context, args ...string) error {
 func (s *Systemd) Install(ctx context.Context, binary string) (string, error) {
 	if s.EUID != 0 {
 		return "", ErrNeedsRoot
+	}
+	if hiddenFromTheUnit(binary) {
+		return "", fmt.Errorf("the service could not run %s: its unit hides /home, /root and /run/user; "+
+			"install the binary elsewhere, such as /usr/local/bin", binary)
 	}
 	if !s.booted() {
 		return noteNoSystemd, nil
