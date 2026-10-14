@@ -186,11 +186,13 @@ curl -fsSL --fail-early -O $BASE/$BIN -O $BASE/checksums.txt -O $BASE/checksums.
   sudo mkdir -p /usr/local/bin && sudo install -m 0755 $BIN /usr/local/bin/taraengine
 ```
 
-The steps form one chain, so a download, a signature or a checksum that fails stops it before anything is installed. On
-a Mac without `sha256sum`, use `shasum -a 256 -c $BIN.sha256` in its place. Then install the service:
-`taraengine service install` on macOS, `sudo /usr/local/bin/taraengine service install` on Linux. `taraengine version`
-prints the version you installed. The signature covers `checksums.txt`, and the checksums cover every binary and package
-of the release, so verifying the one verifies the rest. The provenance can be checked with
+On Linux, install the OpenMP library that llama.cpp needs first, as the installer script and the packages do:
+`sudo apt-get install libgomp1` on Debian and Ubuntu, `sudo dnf install libgomp` on Fedora and RHEL. The steps form one
+chain, so a download, a signature or a checksum that fails stops it before anything is installed. On a Mac without
+`sha256sum`, use `shasum -a 256 -c $BIN.sha256` in its place. Then install the service: `taraengine service install` on
+macOS, `sudo /usr/local/bin/taraengine service install` on Linux. `taraengine version` prints the version you installed.
+The signature covers `checksums.txt`, and the checksums cover every binary and package of the release, so verifying the
+one verifies the rest. The provenance can be checked with
 [slsa-verifier](https://github.com/slsa-framework/slsa-verifier). The macOS binary is signed and notarized, so macOS
 runs it also when a browser downloaded it.
 
