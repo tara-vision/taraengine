@@ -18,8 +18,11 @@ gates="
 ./internal/measure:90
 ./internal/machine:90
 ./internal/api:90
+./internal/service:90
+./internal/selfupdate:90
 ./pkg/client:90
 ./tools/pinregistry:90
+./tools/rendercask:90
 "
 
 status=0

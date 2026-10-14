@@ -105,6 +105,10 @@ jobs:
           cache: true
       - name: Build
         run: make build
+      # The Test job runs on Linux, where systemd-analyze checks the unit; plutil checks the plist here, on macOS.
+      - name: The LaunchAgent plist passes plutil
+        if: runner.os == 'macOS'
+        run: go test -count=1 -run TestThePlistPassesPlutil ./internal/service/
       # CI is set on every runner, so a missing runtime fails this step instead of skipping the test.
       - name: Real runtime, tiny model
         run: bash scripts/integration.sh
