@@ -42,7 +42,8 @@ func RenderUnit(binary string) ([]byte, error) {
 // LinuxConfig is the configuration file a system service gets when it has none.
 func LinuxConfig() []byte { return []byte(linuxConfig) }
 
-// mustRender renders a template of this package. It fails only for a template that does not exist, which is a bug.
+// mustRender renders a template of this package. It fails only for a name the package does not embed, which no caller
+// passes.
 func mustRender(name string, data map[string]string) []byte {
 	out, err := render(name, data)
 	if err != nil {

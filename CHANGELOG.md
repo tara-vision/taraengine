@@ -25,11 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The deb and rpm packages install, upgrade and remove the system service.
 
 ### Changed
-- `serve` answers from the moment it binds: `GET /api/health` says `starting`, and every other route answers 503 with
-  `Retry-After` until the daemon is ready.
+- `serve` answers from the moment it binds: `GET /api/health` says `starting` and `GET /api/version` answers as it
+  always does, while every other route answers 503 with `Retry-After` until the daemon is ready.
 - `pkg/api`: `Health.Status` can be `starting`; `HealthOK`, `HealthDegraded` and `HealthStarting` name the values.
-- `taraengine doctor` reports the runtime the daemon runs when a daemon answers, and an engine that is starting at
-  once.
+- `taraengine doctor` reports the runtime the daemon runs when a daemon answers, and it reports an engine that is
+  starting without waiting for it.
 - The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple.
 
 ## [0.2.0] - 2026-10-13
