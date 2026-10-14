@@ -28,6 +28,8 @@
   user without root: the permission tests need one.
 - A release signs and notarizes the macOS binary with the repository secrets `MACOS_SIGN_P12`, `MACOS_SIGN_PASSWORD`,
   `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_KEY`, and a stable tag pushes the cask to
-  `tara-vision/homebrew-taracode` with `HOMEBREW_TAP_TOKEN`. `make snapshot` needs none of them and skips both.
+  `tara-vision/homebrew-taracode` with `HOMEBREW_TAP_TOKEN`. A tag whose run lacks one of the five stops before
+  goreleaser (`scripts/require-signing.sh`), so that no release ships an unsigned macOS binary. `make snapshot` needs
+  none of them and skips both.
 - Plain hyphens and straight quotes in code, comments and docs.
 - Commit messages: `type: description` (feat, fix, refactor, docs, test, chore, ci).
