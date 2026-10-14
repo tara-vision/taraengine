@@ -83,7 +83,7 @@ func TestPostremoveClearsTheDataOnADebianPurgeOnly(t *testing.T) {
 }
 
 // The packages depend on the OpenMP library that llama.cpp's Linux builds link, which a minimal Ubuntu lacks, so
-// apt and dnf install it with taraengine.
+// apt, dnf and zypper install it with taraengine.
 func TestThePackagesDependOnTheOpenMPLibrary(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", ".goreleaser.yaml"))
 	if err != nil {
@@ -102,7 +102,7 @@ func TestThePackagesDependOnTheOpenMPLibrary(t *testing.T) {
 	if len(cfg.Nfpms) != 1 {
 		t.Fatalf("want one package definition, got %d", len(cfg.Nfpms))
 	}
-	for format, want := range map[string]string{"deb": "libgomp1", "rpm": "libgomp"} {
+	for format, want := range map[string]string{"deb": "libgomp1", "rpm": "libgomp.so.1()(64bit)"} {
 		if got := cfg.Nfpms[0].Overrides[format].Dependencies; !slices.Contains(got, want) {
 			t.Errorf("the %s depends on %v, want %s among them", format, got, want)
 		}
