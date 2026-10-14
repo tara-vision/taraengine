@@ -22,6 +22,7 @@ const (
 	noteOldBinary = "the taraengine service runs %s until your next login and %s after it; " +
 		"`taraengine service stop` and `taraengine service start` move it now"
 	noteStopped    = "the taraengine service is stopped; `taraengine service start` starts it"
+	noteLater      = "the taraengine service starts again at your next login, or with the first taraengine command"
 	noteNextLogin  = "installed the taraengine service; it starts at your next login, or with the first taraengine command"
 	noteNextLoginE = ", for example `taraengine pull gemma4:12b`"
 )
@@ -52,6 +53,9 @@ var currentUser = user.Current
 var (
 	goneWait = 30 * time.Second
 	gonePoll = 250 * time.Millisecond
+	// installKickstartWait bounds a kickstart in Homebrew's sandbox: launchctl blocks on a job that launchd holds
+	// back, and Homebrew waits for the step.
+	installKickstartWait = 30 * time.Second
 )
 
 // NewLaunchd is the agent of the user who runs this process.
@@ -111,8 +115,14 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	program, loaded := l.loadedProgram(ctx)
 	switch {
 	case loaded && l.Sandboxed && program != "" && program != binary:
+		_ = l.kickstartWithin(ctx) // started when it is down, never restarted: it would stay on the old binary
 		return fmt.Sprintf(noteOldBinary, program, binary), nil
-	case loaded && (l.Sandboxed || !changed && (program == "" || program == binary)):
+	case loaded && l.Sandboxed:
+		if err := l.kickstartWithin(ctx, "-k"); err != nil {
+			return noteLater, nil // the upgrade goes through; the first command or the next login starts the agent
+		}
+		return noteRestarted, nil
+	case loaded && !changed && (program == "" || program == binary):
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
 	case loaded:
 		if err := l.bootout(ctx); err != nil {
@@ -127,6 +137,13 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 		return "", err
 	}
 	return noteInstalled, nil
+}
+
+// kickstartWithin starts the agent, restarting it with -k, and gives up after installKickstartWait.
+func (l *Launchd) kickstartWithin(ctx context.Context, flags ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, installKickstartWait)
+	defer cancel()
+	return l.launchctl(ctx, append(append([]string{"kickstart"}, flags...), l.target())...)
 }
 
 // writePlist puts the plist and the log directory in place and reports whether the plist changed.

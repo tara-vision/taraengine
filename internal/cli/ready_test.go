@@ -301,6 +301,28 @@ func (a *lateAgent) Start(ctx context.Context) error {
 	return nil
 }
 
+// An agent that ended cleanly stays down, as its KeepAlive restarts it only after a crash: a Quit in Activity Monitor,
+// a kill, or a cask's uninstall step. The first command starts it again; an agent that crashed is not started behind
+// the user's back.
+func TestTheFirstCommandStartsAnAgentThatEndedCleanly(t *testing.T) {
+	fastWaits(t, time.Minute, time.Minute)
+	addr := freeAddr(t)
+	agent := &agentManager{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true, Loaded: true,
+		LastExit: "0"}}, addr: addr, t: t}
+	withManager(t, agent.fakeManager, "darwin", 501)
+	newServiceManager = func() (service.Manager, error) { return agent, nil }
+	out, err := run(t, "list", "--config", configListeningOn(t, addr))
+	if err != nil || !strings.Contains(out, "started the taraengine service") || agent.started == nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	crashed := &fakeManager{state: service.State{Installed: true, Enabled: true, Loaded: true, LastExit: "1"}}
+	withManager(t, crashed, "darwin", 501)
+	if _, err := run(t, "list", "--config", configListeningOn(t, "127.0.0.1:1")); err == nil ||
+		!strings.Contains(err.Error(), "did not start") || strings.Contains(strings.Join(crashed.calls, " "), "start") {
+		t.Fatalf("an agent that crashed is reported, not started: %v %v", err, crashed.calls)
+	}
+}
+
 func TestTheFirstUseStartWaitsForAnEngineThatBindsLate(t *testing.T) {
 	fastWaits(t, time.Minute, 2*time.Second)
 	addr := freeAddr(t)

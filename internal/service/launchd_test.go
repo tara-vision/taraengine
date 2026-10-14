@@ -19,6 +19,7 @@ type fakeLaunchctl struct {
 	loaded, disabled, running bool
 	lastExit                  string // what print says after "last exit code ="
 	program                   string // what print says after "program =", left out when empty
+	blockKickstart            bool   // kickstart blocks until its context ends, as on a job that launchd holds back
 	fail                      map[string]bool
 	calls                     []string
 	// slowExit makes the next bootout answer as launchctl does while the job is still exiting: 36, "Operation now in
@@ -35,9 +36,13 @@ const notFound = `Could not find service "` + Label + `" in domain for user gui:
 
 var errExit113 = errors.New("exit status 113")
 
-func (f *fakeLaunchctl) run(_ context.Context, name string, args ...string) (string, error) {
+func (f *fakeLaunchctl) run(ctx context.Context, name string, args ...string) (string, error) {
 	call := strings.Join(append([]string{name}, args...), " ")
 	f.calls = append(f.calls, call)
+	if f.blockKickstart && len(args) > 0 && args[0] == "kickstart" {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	if name != "launchctl" || len(args) < 2 {
 		return "", fmt.Errorf("unexpected command %q", call)
 	}
@@ -223,7 +228,7 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 	// loaded and healthy, for this step to start it on the binary that Homebrew has just linked.
 	t.Run("an upgrade starts the loaded agent on the new binary", func(t *testing.T) {
 		for name, prewritten := range map[string]bool{"a changed plist": false, "the same plist": true} {
-			fake := &fakeLaunchctl{loaded: true, running: true, program: "/opt/homebrew/bin/taraengine",
+			fake := &fakeLaunchctl{loaded: true, lastExit: "0", program: "/opt/homebrew/bin/taraengine",
 				fail: map[string]bool{"bootstrap": true}}
 			l := newLaunchd(t, fake, true)
 			if prewritten {
@@ -241,8 +246,8 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 			}
 		}
 	})
-	// The loaded agent watches the binary of its loaded definition, so an agent that install.sh loaded from another
-	// directory keeps that binary until the definition is loaded again.
+	// The loaded definition names the binary, so an agent that install.sh loaded from another directory keeps that
+	// binary until the definition is loaded again; it is started when it is down, and not restarted.
 	t.Run("an agent loaded from another binary says when it moves", func(t *testing.T) {
 		fake := &fakeLaunchctl{loaded: true, running: true, program: "/usr/local/bin/taraengine",
 			fail: map[string]bool{"bootstrap": true}}
@@ -253,8 +258,26 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 		if err != nil || note != want {
 			t.Fatalf("%q %v", note, err)
 		}
-		if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label}) {
-			t.Fatalf("only reads: %v", fake.calls)
+		if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label,
+			"launchctl kickstart gui/501/" + Label}) {
+			t.Fatalf("started when down, never restarted: %v", fake.calls)
+		}
+	})
+	// A kickstart blocks on a job that launchd holds back, and Homebrew waits for the step: the step gives up after a
+	// while and says when the agent starts, and a refused kickstart does the same, so the upgrade itself goes through.
+	t.Run("a kickstart that blocks or fails leaves the start to later", func(t *testing.T) {
+		previous := installKickstartWait
+		installKickstartWait = 50 * time.Millisecond
+		t.Cleanup(func() { installKickstartWait = previous })
+		for name, fake := range map[string]*fakeLaunchctl{
+			"blocks": {loaded: true, blockKickstart: true},
+			"fails":  {loaded: true, fail: map[string]bool{"kickstart": true}},
+		} {
+			l := newLaunchd(t, fake, true)
+			note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
+			if err != nil || note != "the taraengine service starts again at your next login, or with the first taraengine command" {
+				t.Fatalf("%s: %q %v", name, note, err)
+			}
 		}
 	})
 	t.Run("a loaded agent whose program launchctl does not name is started on the linked binary", func(t *testing.T) {

@@ -51,7 +51,9 @@ func (f *globalFlags) ready(ctx context.Context, w io.Writer, hostGiven bool) er
 	return f.startOrExplain(ctx, w, err)
 }
 
-// startOrExplain starts the macOS agent on first use, or explains with the service's state why nothing answers.
+// startOrExplain starts the macOS agent on first use, or explains with the service's state why nothing answers. An
+// agent that is not loaded is started, and so is one that ended cleanly, which its KeepAlive leaves down; one that
+// crashed is not started behind the user's back.
 func (f *globalFlags) startOrExplain(ctx context.Context, w io.Writer, cause error) error {
 	m, err := newServiceManager()
 	if err != nil {
@@ -62,7 +64,7 @@ func (f *globalFlags) startOrExplain(ctx context.Context, w io.Writer, cause err
 		return f.explain(cause)
 	}
 	switch {
-	case hostOS == "darwin" && st.Installed && st.Enabled && !st.Loaded:
+	case hostOS == "darwin" && st.Installed && st.Enabled && (!st.Loaded || !st.Running && st.LastExit == "0"):
 		if err := m.Start(ctx); err != nil {
 			return err
 		}
