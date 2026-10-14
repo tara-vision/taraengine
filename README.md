@@ -51,9 +51,9 @@
 
 ## Status
 
-This release installs with one command and runs as a service that keeps itself current: the pinned runtime, the
-catalog with its tuned presets, the control API and the OpenAI-compatible passthrough, on Apple Silicon Macs and
-NVIDIA Linux machines. taracode's next release runs on it.
+This release serves the pinned runtime, the catalog with its tuned presets, the control API and the OpenAI-compatible
+passthrough, on Apple Silicon Macs and NVIDIA Linux machines. It installs with one command and runs as a service, which
+fetches the llama.cpp build that its binary pins. taracode's next release runs on it.
 
 ## Quick Start
 
@@ -81,7 +81,7 @@ download by hand and the build from source.
 taraengine pull gemma4:12b
 ```
 
-On a Mac the first command that needs the engine starts the service, and a command waits while the engine fetches its
+On a Mac the first command that needs the engine starts the service. A command waits while the engine fetches its
 runtime. `gemma4:12b` suits 16 GB of RAM. On a smaller machine, pull the model that `taraengine doctor` names, and use
 that name in step 3.
 
@@ -146,8 +146,9 @@ curl -fsSL https://engine.tara.vision/install.sh | bash
 
 It downloads the binary for the machine, checks it against the release's `checksums.txt`, installs it to
 `/usr/local/bin` (with sudo when the directory needs it), and installs the service: as you on macOS, as root on Linux.
-`TARAENGINE_VERSION=v0.3.0` installs another release, `INSTALL_DIR` another directory, and `TARAENGINE_NO_SERVICE=1`
-the binary alone. Running it again updates taraengine.
+Its variables go after the pipe: `curl -fsSL https://engine.tara.vision/install.sh | TARAENGINE_VERSION=v0.3.0 bash`
+installs that release (v0.3.0 or later), `INSTALL_DIR=<dir>` another directory (on Linux one outside `/home`, which the
+service cannot reach), and `TARAENGINE_NO_SERVICE=1` the binary alone. Running it again updates taraengine.
 
 **Packages:** the release has a `.deb` and an `.rpm` for amd64 and arm64.
 
@@ -175,7 +176,7 @@ cosign verify-blob --bundle checksums.txt.sigstore.json \
 sha256sum --ignore-missing -c checksums.txt     # on macOS: shasum -a 256 --ignore-missing -c checksums.txt
 chmod +x $BIN
 sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
-taraengine service install                      # with sudo on Linux
+taraengine service install                      # on Linux: sudo /usr/local/bin/taraengine service install
 ```
 
 `taraengine version` prints the version you installed. The signature covers `checksums.txt`, and the checksums cover
@@ -186,7 +187,7 @@ runs it also when a browser downloaded it.
 **Updates:** `taraengine update` brings taraengine to the latest release the way it came: through Homebrew for the
 cask, the new package for a `.deb` or an `.rpm` (run it with sudo), or the binary in place (with sudo when its
 directory needs it), and then it restarts the service. `taraengine update --check` only says whether a newer release
-is out. It looks the release up only when you run it. A host whose version a playbook pins is updated by its playbook.
+is out. It looks the release up only when you run it.
 
 To build from source, clone the repository and run `make build`; [Development](#development) lists the other
 targets.
@@ -207,15 +208,16 @@ runtime when it is missing and keeps its stderr to warnings.
 | Logs          | `~/Library/Logs/taraengine/service.log`, the data log | `journalctl -u taraengine`, `/var/lib/taraengine/logs/taraengine.log`    |
 | Changed       | as your user                                          | with sudo                                                                |
 
-`service stop` stops the service until `service start`, across logins and reboots, and an install or an upgrade keeps
-a stopped service stopped. `service restart` restarts it, or starts a stopped one, which then runs at login or boot
-again; `service status` shows it and the engine it runs, and ends with 3 when it does not run; `service uninstall`
-stops it and removes the definition, while the models and the configuration stay. On Linux, a normal user's commands
-reach the system service at the default address; when the configuration sets an `api_key`, set `TARAENGINE_API_KEY`.
-The unit keeps the engine out of the system directories and `/home`; an admin who moves `data_dir` under `/home` lifts
-`ProtectHome` with a drop-in (`systemctl edit taraengine`). The service imports a local GGUF file as the user
-`taraengine`, so the file has to be outside `/home`, such as under `/srv/models`, and readable by that user. Without
-systemd, as in a container, run `taraengine serve` under the supervisor you have.
+`service stop` stops the service until `service start`, across logins and reboots, and an install or an upgrade keeps a
+stopped service stopped. `service restart` restarts it, or starts a stopped one, which then runs at login or boot again;
+`service status` shows it and the engine it runs, and ends with 3 when it does not run; `service uninstall` stops it and
+removes the definition, while the models and the configuration stay. On Linux, a normal user's commands reach the system
+service at the default address; when the configuration sets an `api_key`, set `TARAENGINE_API_KEY`. The unit makes
+`/usr`, `/boot`, `/efi` and `/etc` read-only for the engine and hides `/home`, `/root` and `/run/user`, so the binary
+and `data_dir` belong outside them; an admin who needs `/home` lifts `ProtectHome` with a drop-in
+(`sudo systemctl edit taraengine`). The service imports a local GGUF file as the user `taraengine`, so the file has to
+be outside `/home`, such as under `/srv/models`, and readable by that user. Without systemd, as in a container, run
+`taraengine serve` under the supervisor you have.
 
 ## Runtime
 
@@ -229,9 +231,9 @@ exactly one upstream build.
   any entry that would land outside the target directory, and any link that does not point at a sibling file. The
   sha256 of the installed `llama-server` goes into a `manifest.json` next to it, and `taraengine serve` checks the
   binary against that file when it starts. It refuses to start when the runtime is missing or does not match. Run by
-  hand, `serve` never downloads anything itself; run by the service, as `serve --service`, it installs the pinned build
-  first, trying again after 10, 30 and 60 seconds and then every five minutes, and removes the builds it no longer
-  pins once the new one verifies.
+  hand, `serve` never downloads a runtime itself; run by the service, as `serve --service`, it installs the pinned
+  build first, trying again after 10, 30 and 60 seconds and then every five minutes, and removes the builds it no
+  longer pins once the new one verifies. A configured `runtime_dir` is left alone: nothing is fetched or removed for it.
 - **Kept whole.** The directory holds `llama-server`, its libraries and upstream's `LICENSE`. A failed install leaves
   the previous one as it was.
 - **Moved on request.** `taraengine runtime update` moves to the build that the running taraengine pins, never to
@@ -255,7 +257,8 @@ runtime bundle, a few hundred megabytes; `--cudart` fetches it always and `--no-
 shows the GPU, the RAM tier and the runtime it found, and names a model that needs a newer runtime than the pinned one.
 
 The runtime lives in `<data dir>/runtime/<build>/`. The data directory is `~/Library/Application Support/taraengine`
-on macOS, and `$XDG_DATA_HOME/taraengine` (default `~/.local/share/taraengine`) on Linux.
+on macOS, and `$XDG_DATA_HOME/taraengine` (default `~/.local/share/taraengine`) on Linux; the Linux service uses
+`/var/lib/taraengine`.
 
 ### Supervision
 
@@ -393,7 +396,7 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 
 | Route | What it does | Errors |
 |-------|--------------|--------|
-| `GET /api/health` | `{"status":"ok"}`, `"degraded"` or, while the daemon starts, `"starting"` with a `detail` that says what it does, with the backend's name. Open without a key; `HEAD` works too. | |
+| `GET /api/health` | `{"status":"ok"}` or `"degraded"`, with the backend's name; while the daemon starts, `"starting"` with a `detail` that names the step. Open without a key; `HEAD` works too. | |
 | `GET /api/version` | The taraengine version, the runtime build and the platform. | |
 | `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default and memory. | 503 |
 | `GET /api/models/{name}` | One model in detail: also its native context, a digest, the preset in effect and, after a failure, the end of the server log. | 400, 404, 503 |
@@ -405,8 +408,8 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 | `GET /api/doctor` | The machine (GPU, memory, tier, driver), the runtime status and the recommended model per tier. | |
 | `/v1/*` | llama-server's OpenAI and Anthropic API, proxied. | 400, 401, 403, 404, 405, 409, 503 |
 
-While the daemon starts, `GET` and `HEAD /api/health` and `GET /api/version` answer, and every other route answers
-503 with `Retry-After: 5` and the error `taraengine is starting: <detail>`.
+While the daemon starts, `GET` and `HEAD /api/health` and `GET /api/version` answer, and every other request that passes
+the host, origin and key checks answers 503 with `Retry-After: 5` and the error `taraengine is starting: <detail>`.
 
 ```sh
 curl http://127.0.0.1:8272/api/loaded
@@ -503,14 +506,15 @@ logs/               taraengine.log and llama-server.log, rotated at 20 MB with t
 **No telemetry.** taraengine sends no usage data and files no crash reports, and it looks for a new release only when
 you run `taraengine update`. It connects only when something needs it: to `huggingface.co` on `taraengine pull`; to
 `github.com` on `taraengine runtime install`, `runtime update` and `taraengine update`, and when the service starts
-with a pinned build that is not installed yet, which is the first start after an install or an upgrade; and to
-`engine.tara.vision` when `taraengine update` cannot get the latest version from GitHub. Hugging Face and GitHub
-redirect downloads to their own content delivery hosts (under `hf.co` and `githubusercontent.com`). Nothing else
+without a verified copy of the build it pins, as on the first start after an install or after an upgrade that pins a new
+build; and to `engine.tara.vision` when `taraengine update` cannot get the latest version from GitHub. Hugging Face and
+GitHub redirect downloads to their own content delivery hosts (under `hf.co` and `githubusercontent.com`). Nothing else
 leaves the machine.
 
-A pull is carried out by the daemon, so it is the `serve` process that connects to Hugging Face, during the pull and
-for a short while after it. At any other time neither `serve` nor the `llama-server` it supervises holds a connection
-beyond the loopback. A Hugging Face token is sent to Hugging Face only, and it is never logged.
+A pull is carried out by the daemon, so it is the `serve` process that connects to Hugging Face, during the pull and for
+a short while after it. Under the service, `serve --service` also connects to GitHub while it fetches its runtime. At
+any other time neither `serve` nor the `llama-server` it supervises holds a connection beyond the loopback. A Hugging
+Face token is sent to Hugging Face only, and it is never logged.
 
 What can reach the API:
 
