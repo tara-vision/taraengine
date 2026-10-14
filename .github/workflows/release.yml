@@ -36,6 +36,16 @@ jobs:
       - name: Release notes from CHANGELOG
         run: bash scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
+      # A missing secret would make goreleaser skip notarization and publish an unsigned macOS binary.
+      - name: Require the signing secrets
+        run: bash scripts/require-signing.sh
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
       - name: goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
@@ -44,6 +54,12 @@ jobs:
           args: release --clean --release-notes=${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The Developer ID certificate and the App Store Connect key that sign and notarize the macOS binary.
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Collect subject hashes for provenance
         id: hash
@@ -82,3 +98,36 @@ jobs:
         run: |
           bash scripts/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
           gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+
+  cask:
+    name: Homebrew cask
+    needs: [goreleaser, provenance]
+    # A pre-release gets no cask: brew upgrade must never land on a release candidate.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # reads the release's checksums.txt
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Render the cask from the release's checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --pattern checksums.txt --dir "$RUNNER_TEMP"
+          go run ./tools/rendercask "$RUNNER_TEMP/checksums.txt" "$GITHUB_REF_NAME" > "$RUNNER_TEMP/taraengine.rb"
+
+      # The tap token is used in this step only, for this one push.
+      - name: Push the cask to the tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_URL: https://github.com/tara-vision/homebrew-taracode.git
+        run: bash scripts/push-cask.sh "$RUNNER_TEMP/taraengine.rb" "$GITHUB_REF_NAME"

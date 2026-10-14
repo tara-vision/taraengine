@@ -20,7 +20,7 @@ func newLoadCommand(flags *globalFlags) *cobra.Command {
 		Short: "Load a model, optionally at a context window",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}
@@ -68,7 +68,7 @@ func newUnloadCommand(flags *globalFlags) *cobra.Command {
 		Short: "Unload a model",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}

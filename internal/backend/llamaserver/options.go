@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,6 +43,9 @@ type Options struct {
 	// OnProps, when set, hears the props of every successful props read, under the catalog name, after the backend
 	// has let go of its lock; the serve wiring saves an import's capabilities with it.
 	OnProps func(name string, props backend.Props)
+	// HeldLock is the data directory's lock when the caller took it with LockDataDir. The first Start adopts it in
+	// place of taking one, and from then on it is the backend's: a failed Start or a Stop closes it.
+	HeldLock *os.File
 }
 
 // PresetPath is the preset file inside a data directory.

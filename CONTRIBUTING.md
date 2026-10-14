@@ -19,5 +19,18 @@
     curl -sL <asset url> | tar -tzf - > internal/runtime/testdata/cudart/<asset>.txt
     ```
 - `make snapshot` builds the release artifacts into `dist/` without publishing or signing anything.
+- The service definitions and the cask are templates: `internal/service/templates/` (the LaunchAgent plist and the
+  systemd unit) and `tools/rendercask/cask.rb.tmpl`. After a change, `UPDATE_GOLDEN=1 go test ./internal/service/
+  ./tools/rendercask/` rewrites their golden files; review that diff in the pull request. `plutil -lint` on macOS,
+  `systemd-analyze verify` on Linux and `ruby -c` check what they render, and CI requires all three.
+- `install.sh`, `scripts/push-cask.sh` and the package scripts in `packaging/` are tested from Go, in `scripts/`,
+  against a fake release and stand-ins for `uname`, `id`, `sudo` and the engine. On Linux, run `go test ./...` once as a
+  user without root: the permission tests need one. In a container, give the run an init process (`docker run --init`),
+  which reaps the processes the supervisor tests kill.
+- A release signs and notarizes the macOS binary with the repository secrets `MACOS_SIGN_P12`, `MACOS_SIGN_PASSWORD`,
+  `MACOS_NOTARY_ISSUER_ID`, `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_KEY`, and a stable tag pushes the cask to
+  `tara-vision/homebrew-taracode` with `HOMEBREW_TAP_TOKEN`. A tag whose run lacks one of the five stops before
+  goreleaser (`scripts/require-signing.sh`), so that no release ships an unsigned macOS binary. `make snapshot` needs
+  none of them and skips both.
 - Plain hyphens and straight quotes in code, comments and docs.
 - Commit messages: `type: description` (feat, fix, refactor, docs, test, chore, ci).

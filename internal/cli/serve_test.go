@@ -130,19 +130,14 @@ func startServe(t *testing.T, router llamatest.Options, prepare func(dataDir str
 	}
 	t.Cleanup(func() { _ = stop() })
 	probe := &http.Client{Timeout: 5 * time.Second}
-	for i := 0; ; i++ {
-		resp, err := probe.Get("http://" + listen + "/api/health")
-		if err == nil {
-			_ = resp.Body.Close()
-			break
-		}
+	for i := 0; !healthOK(probe, "http://"+listen); i++ {
 		select {
 		case <-finished:
 			t.Fatalf("serve ended before it came up: %v", result)
 		default:
 		}
 		if i >= 200 {
-			t.Fatalf("the api did not come up: %v", err)
+			t.Fatal("the api did not come up")
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
@@ -364,7 +359,7 @@ func TestServeFlagsAreTheDocumentedOnesAndTheTestOnesAreHidden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"listen", "data-dir", "runtime-dir"} {
+	for _, name := range []string{"listen", "data-dir", "runtime-dir", "service"} {
 		if f := cmd.Flags().Lookup(name); f == nil || f.Hidden {
 			t.Errorf("--%s must be a public flag: %v", name, f)
 		}

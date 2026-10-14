@@ -32,11 +32,13 @@ import (
 // otherTier is the context tier of a model that is not in the registry; the API reports its window by the same key.
 const otherTier = "other"
 
-// WireOptions are the serve flags.
+// WireOptions are the serve flags, and the data directory's lock when serve took it before wiring.
 type WireOptions struct {
 	Attach    string
 	AttachKey string
+	Service   bool // run by a service manager: serve --service
 	Logger    *slog.Logger
+	HeldLock  *os.File
 }
 
 // Wired is a daemon ready to listen.
@@ -132,7 +134,7 @@ func newBackend(
 		LoadTimeout: time.Duration(cfg.LoadTimeout) * time.Second, Global: global,
 		Models: presetModels(cat, cfg), State: state.Store{Path: filepath.Join(cfg.DataDir, "state.json")},
 		Probe: measure.Default(goruntime.GOOS, measure.ExecRunner), OnProps: saveCapabilities(cat.Index, opts.Logger),
-		Logger: opts.Logger, Attach: opts.Attach,
+		Logger: opts.Logger, Attach: opts.Attach, HeldLock: opts.HeldLock,
 	})
 }
 

@@ -90,12 +90,19 @@ func TestDoctorShowsAVerifiedRuntimeAndTheDaemon(t *testing.T) {
 	dataDir := t.TempDir()
 	dir := installRuntime(t, dataDir)
 	lock, _ := runtime.LoadLock()
-	out, err := run(t, "doctor", "--host="+d.srv.URL, "--data-dir", dataDir)
+	out, err := run(t, "doctor", "--host=http://127.0.0.1:1", "--data-dir", dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := "Runtime: " + lock.Build + " verified in " + dir + "\n"; !strings.Contains(out, want) {
-		t.Fatalf("missing %q in\n%s", want, out)
+		t.Fatalf("without a daemon the runtime is the local one: missing %q in\n%s", want, out)
+	}
+	out, err = run(t, "doctor", "--host="+d.srv.URL, "--data-dir", dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Runtime: bTEST verified in /rt/bTEST (as the engine at " + d.srv.URL + " sees it)\n"; !strings.Contains(out, want) {
+		t.Fatalf("with a daemon the runtime is the daemon's: missing %q in\n%s", want, out)
 	}
 	if want := "Daemon: taraengine 0.1.0-test on linux/amd64/cuda12, runtime bTEST, at " + d.srv.URL + "\n"; !strings.Contains(out, want) {
 		t.Fatalf("missing %q in\n%s", want, out)

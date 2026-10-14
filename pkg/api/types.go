@@ -56,12 +56,20 @@ type Version struct {
 	Platform string      `json:"platform"`
 }
 
-// Health is GET /api/health.
+// Health is GET /api/health. Status is one of HealthOK, HealthDegraded and HealthStarting; Detail says why when it is
+// not ok, and while the daemon starts it names the step it is at.
 type Health struct {
 	Status  string `json:"status"`
 	Backend string `json:"backend"`
 	Detail  string `json:"detail,omitempty"`
 }
+
+// The values of Health.Status.
+const (
+	HealthOK       = "ok"       // the backend answers
+	HealthDegraded = "degraded" // the backend does not answer as it should; Detail says how
+	HealthStarting = "starting" // the daemon is getting ready, for example installing its runtime; Detail says how far
+)
 
 // LoadRequest is POST /api/load.
 type LoadRequest struct {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -15,6 +16,13 @@ import (
 	"github.com/tara-vision/taraengine/internal/llamatest"
 )
 
+// serveWired serves an already wired daemon on ln until ctx ends, the way serve does once it has switched to the full
+// handler.
+func serveWired(ctx context.Context, ln net.Listener, wired *Wired, logger *slog.Logger, grace time.Duration) error {
+	srv, failed := startHTTP(ln, wired.Handler, wired.Config.DataDir, logger)
+	return await(ctx, srv, failed, wired.Backend, logger, grace)
+}
+
 // brokenListener fails to accept at once, so that the HTTP server built on it stops by itself.
 type brokenListener struct{}
 
@@ -22,16 +30,16 @@ func (brokenListener) Accept() (net.Conn, error) { return nil, errors.New("accep
 func (brokenListener) Close() error              { return nil }
 func (brokenListener) Addr() net.Addr            { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 1} }
 
-func TestServeOnReportsAServerThatStopsOnItsOwn(t *testing.T) {
+func TestServeWiredReportsAServerThatStopsOnItsOwn(t *testing.T) {
 	dataDir := t.TempDir()
 	wired, _ := wireAttached(t, dataDir, attachedConfig(dataDir), debugLogger(io.Discard))
-	err := serveOn(context.Background(), brokenListener{}, wired, debugLogger(io.Discard), time.Second)
+	err := serveWired(context.Background(), brokenListener{}, wired, debugLogger(io.Discard), time.Second)
 	if err == nil || !strings.Contains(err.Error(), "serve: accept failed") {
 		t.Fatalf("%v", err)
 	}
 }
 
-func TestServeOnClosesWhatOutlivesTheGraceAndStillReturnsCleanly(t *testing.T) {
+func TestServeWiredClosesWhatOutlivesTheGraceAndStillReturnsCleanly(t *testing.T) {
 	dataDir := t.TempDir()
 	putModel(t, dataDir, "gemma4:e4b")
 	fake := llamatest.New(t, llamatest.Options{
@@ -50,7 +58,7 @@ func TestServeOnClosesWhatOutlivesTheGraceAndStillReturnsCleanly(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- serveOn(ctx, ln, wired, logger, 100*time.Millisecond) }()
+	go func() { done <- serveWired(ctx, ln, wired, logger, 100*time.Millisecond) }()
 
 	body := `{"model":"gemma4:e4b","stream":true,"messages":[{"role":"user","content":"hi"}]}`
 	resp, err := http.Post("http://"+ln.Addr().String()+"/v1/chat/completions", "application/json", strings.NewReader(body))
@@ -87,7 +95,7 @@ func TestServeOnClosesWhatOutlivesTheGraceAndStillReturnsCleanly(t *testing.T) {
 	}
 }
 
-func TestServeOnStopsAnIdleDaemonAtOnce(t *testing.T) {
+func TestServeWiredStopsAnIdleDaemonAtOnce(t *testing.T) {
 	dataDir := t.TempDir()
 	var logs syncBuffer
 	wired, _ := wireAttached(t, dataDir, attachedConfig(dataDir), debugLogger(&logs))
@@ -97,7 +105,7 @@ func TestServeOnStopsAnIdleDaemonAtOnce(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- serveOn(ctx, ln, wired, debugLogger(&logs), time.Minute) }()
+	go func() { done <- serveWired(ctx, ln, wired, debugLogger(&logs), time.Minute) }()
 	if resp, _ := get(t, "http://"+ln.Addr().String()+"/api/health"); resp.StatusCode != http.StatusOK {
 		t.Fatalf("health: %d", resp.StatusCode)
 	}

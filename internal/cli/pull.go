@@ -22,7 +22,7 @@ func newPullCommand(flags *globalFlags) *cobra.Command {
 		Short: "Pull a catalog model with its siblings, or register another GGUF",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := flags.resolved()
+			f, err := flags.connect(cmd)
 			if err != nil {
 				return err
 			}

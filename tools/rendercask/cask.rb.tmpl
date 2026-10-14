@@ -1,0 +1,51 @@
+# Rendered by tools/rendercask in tara-vision/taraengine at every release; edit the template there, not this file.
+cask "taraengine" do
+  version "[[.Version]]"
+  sha256 "[[.SHA256]]"
+
+  url "https://github.com/tara-vision/taraengine/releases/download/v#{version}/taraengine-darwin-arm64"
+  name "taraengine"
+  desc "Local OpenAI-compatible inference engine built on llama.cpp"
+  homepage "https://engine.tara.vision/"
+
+  livecheck do
+    skip "Rendered at every release."
+  end
+
+  depends_on arch: :arm64
+  depends_on macos: ">= :ventura"
+
+  binary "taraengine-darwin-arm64", target: "taraengine"
+
+  # Inside Homebrew's sandbox a first install cannot load the agent: it starts at the next login or with the first
+  # taraengine command. An upgrade restarts the agent that runs.
+  postflight_steps do
+    run "{{HOMEBREW_PREFIX}}/bin/taraengine",
+        args:           ["service", "install", "--binary", "{{HOMEBREW_PREFIX}}/bin/taraengine"],
+        writable_paths: ["Library/LaunchAgents", "Library/Logs/taraengine"],
+        writable_base:  :home
+  end
+
+  # This runs after the binary is unlinked, so KeepAlive's PathState lets the agent stay down; an upgrade links the
+  # new binary and the step above restarts the agent on it.
+  uninstall_postflight_steps do
+    run "/bin/sh",
+        args:         ["-c", "launchctl kill SIGTERM gui/$(id -u)/vision.tara.taraengine"],
+        must_succeed: false
+    remove "Library/LaunchAgents/vision.tara.taraengine.plist", base: :home
+  end
+
+  zap trash: [
+    "~/.config/taraengine",
+    "~/Library/Application Support/taraengine",
+    "~/Library/Logs/taraengine",
+  ]
+
+  caveats <<~EOS
+    taraengine runs as a login service. It starts with your first command, for example:
+
+      taraengine pull gemma4:12b
+
+    `taraengine service status` shows it, `taraengine service stop` turns it off.
+  EOS
+end

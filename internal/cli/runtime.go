@@ -121,14 +121,19 @@ func (rf *runtimeFlags) install(cmd *cobra.Command, flags *globalFlags, onlyIfNe
 	return p.err
 }
 
-// wantsCudart decides whether the CUDA runtime bundle goes in with the server. The flags decide first. Without
-// one, a CUDA build gets the bundle when the machine has no CUDA runtime of the major version the build links
-// against, and a build without CUDA never needs it.
+// wantsCudart decides whether the CUDA runtime bundle goes in with the server. The flags decide first, and without
+// one cudartWanted does.
 func (rf *runtimeFlags) wantsCudart(major int, installed func(major int) bool) bool {
 	if rf.cudart {
 		return true
 	}
-	return !rf.noCudart && major > 0 && !installed(major)
+	return !rf.noCudart && cudartWanted(major, installed)
+}
+
+// cudartWanted is the rule without flags: a CUDA build gets the bundle when the machine has no CUDA runtime of the
+// major version the build links against, and a build without CUDA never needs it.
+func cudartWanted(major int, installed func(major int) bool) bool {
+	return major > 0 && !installed(major)
 }
 
 // downloadLines prints one line for every tenth of a download. A download of unknown length shows none.

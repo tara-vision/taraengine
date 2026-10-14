@@ -1,0 +1,23 @@
+[Unit]
+Description=taraengine, the Tara Vision inference engine
+Documentation=https://engine.tara.vision
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=taraengine
+Group=taraengine
+ExecStart=/usr/local/bin/taraengine serve --service --config /etc/taraengine/config.yaml
+# SIGTERM goes to the daemon only: it gives requests 5 s, then stops its own llama-server children (SIGTERM, SIGKILL
+# after 10 s). systemd kills anything left once the daemon exits, and everything at TimeoutStopSec.
+KillMode=mixed
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -9,9 +9,9 @@ import (
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	h, err := s.deps.Backend.Health(r.Context())
-	out := api.Health{Status: "ok", Backend: h.Backend, Detail: h.Detail}
+	out := api.Health{Status: api.HealthOK, Backend: h.Backend, Detail: h.Detail}
 	if err != nil || !h.OK {
-		out.Status = "degraded"
+		out.Status = api.HealthDegraded
 		if err != nil {
 			s.deps.Logger.Warn("backend health probe failed", "error", err)
 			out.Detail = "the backend did not answer its health probe" // this route is open, so nothing from err

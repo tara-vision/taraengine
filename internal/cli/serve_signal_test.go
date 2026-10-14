@@ -117,11 +117,7 @@ func TestExecuteLetsServeShutDownOnASignalWithoutTheTwoFighting(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- Execute() }()
 			probe := &http.Client{Timeout: 5 * time.Second}
-			for i := 0; ; i++ {
-				if resp, err := probe.Get("http://" + listen + "/api/health"); err == nil {
-					_ = resp.Body.Close()
-					break
-				}
+			for i := 0; !healthOK(probe, "http://"+listen); i++ {
 				if i >= 200 {
 					t.Fatal("the api did not come up")
 				}

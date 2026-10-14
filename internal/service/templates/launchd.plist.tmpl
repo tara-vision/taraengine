@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>vision.tara.taraengine</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{xml .Binary}}</string>
+		<string>serve</string>
+		<string>--service</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>PathState</key>
+		<dict>
+			<key>{{xml .Binary}}</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>{{xml .Log}}</string>
+	<key>StandardErrorPath</key>
+	<string>{{xml .Log}}</string>
+</dict>
+</plist>

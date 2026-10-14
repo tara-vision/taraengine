@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `taraengine service install | uninstall | start | stop | restart | status` runs taraengine as a service: a LaunchAgent
+  of the user on macOS, a systemd system service under its own `taraengine` user on Linux. A stop is remembered until
+  a start, and `service status` ends with 3 when the service does not run.
+- `serve --service`, which the service definitions run: the daemon fetches the llama.cpp build its binary pins when
+  the build is missing, checked against the embedded lock before anything is unpacked, and tries again after 10, 30
+  and 60 seconds, then every five minutes; it removes the builds it no longer pins, and keeps stderr to warnings and
+  errors.
+- `taraengine update` brings taraengine to the latest release through the channel it came from: Homebrew, a deb or rpm
+  package, or the binary in place. `--check` only reports. It looks the release up only when it is run.
+- The commands that talk to the engine wait for one that is starting, and on macOS the first of them starts the
+  installed agent.
+- `install.sh`, attached to every release and listed in `checksums.txt`, installs the binary and the service in one
+  command.
+- The Homebrew cask `tara-vision/taracode/taraengine`, for Apple Silicon Macs.
+- The deb and rpm packages install, upgrade and remove the system service.
+
+### Changed
+- `serve` answers from the moment it binds: `GET /api/health` says `starting` and `GET /api/version` answers as it
+  always does, while every other route answers 503 with `Retry-After` until the daemon is ready.
+- `pkg/api`: `Health.Status` can be `starting`; `HealthOK`, `HealthDegraded` and `HealthStarting` name the values.
+- `taraengine doctor` reports the runtime the daemon runs when a daemon answers, and it reports an engine that is
+  starting without waiting for it.
+- The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple.
+
 ## [0.2.0] - 2026-10-13
 
 ### Added

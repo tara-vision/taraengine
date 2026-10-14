@@ -78,6 +78,7 @@ type daemon struct {
 	done       chan struct{} // closed once the process has been waited for
 	waitErr    error         // the result of the wait, valid once done is closed
 	baseURL    string        // where the daemon says it listens, set during start
+	seen       []string      // the health statuses the start saw, in order
 
 	stopOnce sync.Once
 	stopped  atomic.Bool
@@ -88,10 +89,18 @@ type daemon struct {
 // be stopped when the test ends, whatever way that happens.
 func startDaemon(t *testing.T, env environment, dataDir, configPath string) *daemon {
 	t.Helper()
+	return startDaemonWith(t, env, dataDir, configPath, "")
+}
+
+// startDaemonWith is startDaemon with flags after the config, such as --service. A daemon run with --service keeps
+// its info lines, the listening line among them, off stderr: baseURL then names the address its config fixes.
+func startDaemonWith(t *testing.T, env environment, dataDir, configPath, baseURL string, flags ...string) *daemon {
+	t.Helper()
 	d := &daemon{
 		bin: env.bin, dataDir: dataDir, configPath: configPath, logs: &syncBuffer{}, done: make(chan struct{}),
+		baseURL: baseURL,
 	}
-	d.cmd = exec.Command(env.bin, "serve", "--config", configPath)
+	d.cmd = exec.Command(env.bin, append([]string{"serve", "--config", configPath}, flags...)...)
 	d.cmd.Env = environmentWithout(ownedEnvPrefix)
 	d.cmd.Stdout, d.cmd.Stderr = d.logs, d.logs
 	d.cmd.WaitDelay = 5 * time.Second // a stray descendant that holds the output open cannot hold the wait forever
@@ -154,6 +163,9 @@ func (d *daemon) awaitHealthy(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), callTimeout)
 		health, err := c.Health(ctx)
 		cancel()
+		if err == nil {
+			d.seen = append(d.seen, health.Status)
+		}
 		if err == nil && health.Status == "ok" {
 			return
 		}

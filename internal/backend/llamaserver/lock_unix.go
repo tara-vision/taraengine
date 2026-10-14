@@ -15,6 +15,16 @@ import (
 // flock is syscall.Flock; a variable only so the tests can reach a file system that refuses the lock.
 var flock = syscall.Flock
 
+// LockDataDir creates the data directory when it is missing and takes its lock, for a caller that hands the lock to
+// a backend through Options.HeldLock: serve takes it before it installs the runtime, so that no second daemon on the
+// same directory downloads or removes anything meanwhile.
+func LockDataDir(dataDir string) (*os.File, error) {
+	if err := os.MkdirAll(dataDir, 0o750); err != nil {
+		return nil, fmt.Errorf("llamaserver: %w", err)
+	}
+	return lockDataDir(dataDir)
+}
+
 // lockDataDir takes the exclusive advisory lock on the data directory's lock file, held for as long as the
 // returned file stays open, and writes this process's pid into it. When another process holds the lock,
 // the error names the data directory and that process's pid. The file is never removed: a lock file
