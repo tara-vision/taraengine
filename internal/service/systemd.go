@@ -79,7 +79,7 @@ func hiddenFromTheUnit(path string) bool {
 }
 
 // linkTarget follows path while it is a symbolic link, up to eight links, and returns where it ends: a binary on PATH
-// can be a link into a directory that the unit hides. A path that is no link, or no longer exists, is returned as it is.
+// can be a link into a directory that the unit hides. A path that is no link, or does not exist, is returned as it is.
 func linkTarget(path string) string {
 	for range 8 {
 		target, err := os.Readlink(path)
