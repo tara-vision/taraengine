@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The sentences Install and Uninstall return.
@@ -43,6 +44,13 @@ var _ Manager = (*Launchd)(nil)
 
 // currentUser is user.Current. It is a variable only so that a test can make the lookup fail.
 var currentUser = user.Current
+
+// goneWait bounds the wait for a job that bootout is still taking down, and gonePoll spaces the looks at it. The engine
+// takes seconds to exit: the requests in flight, then llama-server. Variables so that a test can shorten them.
+var (
+	goneWait = 30 * time.Second
+	gonePoll = 250 * time.Millisecond
+)
 
 // NewLaunchd is the agent of the user who runs this process.
 func NewLaunchd(run Runner) (*Launchd, error) {
@@ -97,7 +105,7 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	case l.loaded(ctx) && (!changed || l.Sandboxed):
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
 	case l.loaded(ctx):
-		if err := l.launchctl(ctx, "bootout", l.target()); err != nil {
+		if err := l.bootout(ctx); err != nil {
 			return "", err
 		}
 		return noteRestarted, l.launchctl(ctx, "bootstrap", l.domain(), l.PlistPath())
@@ -129,6 +137,28 @@ func (l *Launchd) loaded(ctx context.Context) bool {
 	return err == nil
 }
 
+// bootout unloads the agent and waits until launchd has let it go, for goneWait at most. launchctl answers 36,
+// "Operation now in progress", while the job is still exiting: that is a bootout under way, not a failure.
+func (l *Launchd) bootout(ctx context.Context) error {
+	out, err := l.Run(ctx, "launchctl", "bootout", l.target())
+	if err != nil && !strings.Contains(out, "Operation now in progress") {
+		return fmt.Errorf("service: launchctl bootout: %s (%w)", strings.TrimSpace(out), err)
+	}
+	deadline := time.Now().Add(goneWait)
+	for l.loaded(ctx) {
+		if !time.Now().Before(deadline) {
+			return fmt.Errorf("service: the taraengine agent is still exiting after %s; `taraengine service status` shows it",
+				goneWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(gonePoll):
+		}
+	}
+	return nil
+}
+
 // disabled reports whether a stop disabled the agent.
 func (l *Launchd) disabled(ctx context.Context) (bool, error) {
 	out, err := l.Run(ctx, "launchctl", "print-disabled", l.domain())
@@ -154,15 +184,17 @@ func (l *Launchd) Start(ctx context.Context) error {
 	return l.launchctl(ctx, "bootstrap", l.domain(), l.PlistPath())
 }
 
-// Stop unloads the agent and disables it, so that it stays stopped across logins until a start. A kill would not
-// do: KeepAlive starts a killed agent again while its binary exists.
+// Stop disables the agent, so that it stays stopped across logins until a start, and then unloads it. The stop is
+// written first, so that it holds even when the job takes its time to exit or the unload fails. A kill would not do:
+// KeepAlive starts a killed agent again while its binary exists.
 func (l *Launchd) Stop(ctx context.Context) error {
-	if l.loaded(ctx) {
-		if err := l.launchctl(ctx, "bootout", l.target()); err != nil {
-			return err
-		}
+	if err := l.launchctl(ctx, "disable", l.target()); err != nil {
+		return err
 	}
-	return l.launchctl(ctx, "disable", l.target())
+	if l.loaded(ctx) {
+		return l.bootout(ctx)
+	}
+	return nil
 }
 
 // Restart restarts a loaded agent and starts one that is not.
@@ -179,7 +211,7 @@ func (l *Launchd) Uninstall(ctx context.Context) (string, error) {
 		return "", ErrNotInstalled
 	}
 	if l.loaded(ctx) {
-		if err := l.launchctl(ctx, "bootout", l.target()); err != nil {
+		if err := l.bootout(ctx); err != nil {
 			return "", err
 		}
 	}

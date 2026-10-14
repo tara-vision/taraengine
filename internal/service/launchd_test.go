@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeLaunchctl is launchd as launchctl shows it, for one agent: loaded or not, disabled or not, running with a pid.
@@ -19,6 +20,11 @@ type fakeLaunchctl struct {
 	lastExit                  string // what print says after "last exit code ="
 	fail                      map[string]bool
 	calls                     []string
+	// slowExit makes the next bootout answer as launchctl does while the job is still exiting: 36, "Operation now in
+	// progress". The job then stays loaded for lingers more prints.
+	slowExit bool
+	lingers  int
+	exiting  int
 }
 
 const fakeTarget = "gui/501/" + Label
@@ -51,6 +57,11 @@ func (f *fakeLaunchctl) run(_ context.Context, name string, args ...string) (str
 }
 
 func (f *fakeLaunchctl) print(args []string) (string, error) {
+	if f.exiting > 0 {
+		if f.exiting--; f.exiting == 0 {
+			f.loaded, f.running = false, false
+		}
+	}
 	if args[1] != fakeTarget || !f.loaded {
 		return "Bad request.\n" + notFound, errExit113
 	}
@@ -74,6 +85,9 @@ func (f *fakeLaunchctl) enable([]string) (string, error)  { f.disabled = false; 
 func (f *fakeLaunchctl) disable([]string) (string, error) { f.disabled = true; return "", nil }
 
 func (f *fakeLaunchctl) bootstrap([]string) (string, error) {
+	if f.loaded {
+		return "Bootstrap failed: 37: Operation already in progress", errors.New("exit status 37")
+	}
 	f.loaded, f.running = true, true
 	return "", nil
 }
@@ -81,6 +95,10 @@ func (f *fakeLaunchctl) bootstrap([]string) (string, error) {
 func (f *fakeLaunchctl) bootout([]string) (string, error) {
 	if !f.loaded {
 		return "Boot-out failed: 3: No such process", errors.New("exit status 3")
+	}
+	if f.slowExit {
+		f.slowExit, f.exiting = false, f.lingers+1
+		return "Boot-out failed: 36: Operation now in progress", errors.New("exit status 36")
 	}
 	f.loaded, f.running = false, false
 	return "", nil
@@ -263,6 +281,77 @@ func TestLaunchdStartStopRestart(t *testing.T) {
 	}
 }
 
+// fastGone makes the wait for an exiting job short enough for a test.
+func fastGone(t *testing.T) {
+	t.Helper()
+	previousWait, previousPoll := goneWait, gonePoll
+	goneWait, gonePoll = 200*time.Millisecond, time.Millisecond
+	t.Cleanup(func() { goneWait, gonePoll = previousWait, previousPoll })
+}
+
+// installedAgent is an agent installed and running on the fake.
+func installedAgent(t *testing.T) (*Launchd, *fakeLaunchctl) {
+	t.Helper()
+	fake := &fakeLaunchctl{}
+	l := newLaunchd(t, fake, false)
+	if _, err := l.Install(context.Background(), "/usr/local/bin/taraengine"); err != nil {
+		t.Fatal(err)
+	}
+	fake.calls = nil
+	return l, fake
+}
+
+func TestLaunchdStopIsRememberedWhileTheJobIsStillExiting(t *testing.T) {
+	fastGone(t)
+	l, fake := installedAgent(t)
+	fake.slowExit, fake.lingers = true, 2
+	if err := l.Stop(context.Background()); err != nil || fake.loaded || !fake.disabled {
+		t.Fatalf("a stop waits for the job to exit and is remembered: %v %v", err, fake.calls)
+	}
+	disable, bootout := slices.Index(fake.calls, "launchctl disable "+fakeTarget), slices.Index(fake.calls, "launchctl bootout "+fakeTarget)
+	if disable < 0 || bootout < 0 || disable > bootout {
+		t.Fatalf("the stop is written before the job is booted out: %v", fake.calls)
+	}
+}
+
+func TestLaunchdStopIsRememberedWhenTheBootoutFails(t *testing.T) {
+	l, fake := installedAgent(t)
+	fake.fail = map[string]bool{"bootout": true}
+	if err := l.Stop(context.Background()); err == nil || !strings.Contains(err.Error(), "launchctl bootout") || !fake.disabled {
+		t.Fatalf("a stop that cannot unload the job still keeps it from the next login: %v %v", err, fake.calls)
+	}
+}
+
+func TestLaunchdStopSaysWhenTheJobDoesNotExit(t *testing.T) {
+	fastGone(t)
+	l, fake := installedAgent(t)
+	fake.slowExit, fake.lingers = true, 1<<30
+	if err := l.Stop(context.Background()); err == nil || !strings.Contains(err.Error(), "still exiting") {
+		t.Fatalf("got %v", err)
+	}
+	fake.slowExit, fake.lingers, fake.exiting = true, 1<<30, 0
+	fake.loaded = true
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := l.Uninstall(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("the wait ends with the command: %v", err)
+	}
+}
+
+func TestLaunchdReloadAndUninstallWaitForTheOldJob(t *testing.T) {
+	fastGone(t)
+	l, fake := installedAgent(t)
+	fake.slowExit, fake.lingers = true, 2
+	note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
+	if err != nil || note != noteRestarted || !fake.loaded {
+		t.Fatalf("a moved binary is loaded once the old job is gone: %q %v %v", note, err, fake.calls)
+	}
+	fake.slowExit, fake.lingers = true, 2
+	if _, err := l.Uninstall(context.Background()); err != nil || fake.loaded || l.installed() {
+		t.Fatalf("an uninstall waits for the job before it removes the plist: %v %v", err, fake.calls)
+	}
+}
+
 func TestLaunchdStartReportsALoadThatFails(t *testing.T) {
 	fake := &fakeLaunchctl{}
 	l := newLaunchd(t, fake, false)
@@ -407,6 +496,12 @@ func TestLaunchdReportsWhatLaunchctlRefuses(t *testing.T) {
 		l, _ := installed(t, "bootout")
 		if err := l.Stop(ctx); err == nil || !strings.Contains(err.Error(), "launchctl bootout") {
 			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("stop that cannot be written", func(t *testing.T) {
+		l, fake := installed(t, "disable")
+		if err := l.Stop(ctx); err == nil || !strings.Contains(err.Error(), "launchctl disable") || !fake.loaded {
+			t.Fatalf("a stop that cannot be remembered leaves the job running: %v", err)
 		}
 	})
 	t.Run("uninstall that cannot unload", func(t *testing.T) {
