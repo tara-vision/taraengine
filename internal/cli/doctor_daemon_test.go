@@ -65,3 +65,18 @@ func TestDoctorReportsAStartingEngineAtOnce(t *testing.T) {
 		t.Errorf("a starting engine is not asked for its loaded models:\n%s", out)
 	}
 }
+
+func TestDoctorLooksAtThisUsersRuntimeOnlyWhenNoEngineAnswers(t *testing.T) {
+	d := startDaemon(t, func(deps *api.Deps) { deps.Config.APIKey = "sesame" }) // a system service with a key
+	out, err := run(t, "doctor", "--host="+d.srv.URL, "--data-dir", t.TempDir())
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Contains(out, "runtime install") || !strings.Contains(out, "Runtime: the engine at "+d.srv.URL+" did not say which:") {
+		t.Fatalf("an engine that refuses the key still runs the runtime that counts, not this user's empty data directory:\n%s", out)
+	}
+	out, err = run(t, "doctor", "--host=http://127.0.0.1:1", "--data-dir", t.TempDir())
+	if err != nil || !strings.Contains(out, "runtime install") {
+		t.Fatalf("with no engine answering, this user's data directory is the one that counts: %v\n%s", err, out)
+	}
+}

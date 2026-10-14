@@ -73,12 +73,14 @@ func reportMachine(p *printer, info machine.Info) {
 	p.printf(", %s RAM, tier %s\n", gib(info.RAMBytes), info.Tier)
 }
 
-// reportDaemonRuntime prints the runtime as the daemon at the host of f sees it, and reports whether a daemon told:
-// the runtime a daemon runs is the one that counts, and under a system service it is not in this user's data
-// directory. A daemon that is starting says what it is doing with its runtime.
+// reportDaemonRuntime prints the runtime as the daemon at the host of f sees it, and reports whether a daemon
+// answered: the runtime a daemon runs is the one that counts, and under a system service it is not in this user's
+// data directory, which counts only when nothing answers. A daemon that is starting says what it is doing with its
+// runtime; one that refuses to say, such as for a key this user does not have, still runs the runtime that counts.
 func reportDaemonRuntime(ctx context.Context, p *printer, f *globalFlags) bool {
 	c := f.client()
-	if doc, err := c.Doctor(ctx); err == nil {
+	doc, err := c.Doctor(ctx)
+	if err == nil {
 		rt := doc.Runtime
 		if rt.Verified {
 			p.printf("Runtime: %s verified in %s (as the engine at %s sees it)\n", rt.Build, rt.Dir, f.host)
@@ -87,11 +89,15 @@ func reportDaemonRuntime(ctx context.Context, p *printer, f *globalFlags) bool {
 		}
 		return true
 	}
-	if h, err := c.Health(ctx); err == nil && h.Status == apitypes.HealthStarting {
+	if h, herr := c.Health(ctx); herr == nil && h.Status == apitypes.HealthStarting {
 		p.printf("Runtime: %s (the engine at %s is starting)\n", h.Detail, f.host)
 		return true
 	}
-	return false
+	if client.IsConnectionError(err) {
+		return false
+	}
+	p.printf("Runtime: the engine at %s did not say which: %v\n", f.host, f.explain(err))
+	return true
 }
 
 // reportRuntime describes the runtime the daemon would run on: the configured runtime_dir, or the pinned build under
