@@ -56,11 +56,7 @@ func serveLog(t *testing.T, flags ...string) string {
 		t.Fatal("serve did not bind")
 	}
 	probe := &http.Client{Timeout: 5 * time.Second}
-	resp, err := probe.Get("http://" + addr + "/api/health")
-	if err != nil {
-		t.Fatalf("the api did not answer: %v", err)
-	}
-	_ = resp.Body.Close()
+	eventually(t, "the daemon coming up", func() bool { return healthOK(probe, "http://"+addr) })
 	cancel()
 	select {
 	case err := <-done:

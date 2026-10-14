@@ -10,14 +10,19 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	goruntime "runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/tara-vision/taraengine/internal/api"
+	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/config"
 	"github.com/tara-vision/taraengine/internal/logging"
+	"github.com/tara-vision/taraengine/internal/runtime"
+	"github.com/tara-vision/taraengine/internal/version"
 )
 
 const (
@@ -33,9 +38,11 @@ const (
 // address that would open the machine to the network.
 var listenTCP = func(address string) (net.Listener, error) { return net.Listen("tcp", address) }
 
-// serveFlags are the flags of serve that lay over the configuration, and the two that attach it to a router.
+// serveFlags are the flags of serve that lay over the configuration, the two that attach it to a router, and the one
+// that says a service manager runs it.
 type serveFlags struct {
 	listen, dataDir, runtimeDir, attach, attachKey string
+	service                                        bool
 }
 
 // apply returns cfg with the flags that were given laid over it. apiKey is the global --api-key: for serve it is the
@@ -71,13 +78,15 @@ func newServeCommand(flags *globalFlags) *cobra.Command {
 			if err := cfg.Validate(); err != nil {
 				return err
 			}
-			return serve(cmd.Context(), cfg, WireOptions{Attach: sf.attach, AttachKey: sf.attachKey})
+			return serve(cmd.Context(), cfg, WireOptions{Attach: sf.attach, AttachKey: sf.attachKey, Service: sf.service})
 		},
 	}
 	cmd.Flags().StringVar(&sf.listen, "listen", "", "address to listen on (default: the config's, 127.0.0.1:8272)")
 	cmd.Flags().StringVar(&sf.dataDir, "data-dir", "", "data directory (default: the config's)")
 	cmd.Flags().StringVar(&sf.runtimeDir, "runtime-dir", "",
 		"runtime directory (default: the pinned build under the data directory)")
+	cmd.Flags().BoolVar(&sf.service, "service", false,
+		"run under a service manager: keep stderr to warnings and errors, the full log stays in the data directory")
 	cmd.Flags().StringVar(&sf.attach, "attach", "",
 		"attach to a llama-server already running at this URL instead of starting one")
 	cmd.Flags().StringVar(&sf.attachKey, "attach-key", "", "API key of the attached server")
@@ -98,12 +107,16 @@ func shutdownSignals() []os.Signal {
 	return sigs
 }
 
-// serve runs the daemon until the parent context ends or a shutdown signal arrives. serve binds the listen address
-// first, so that a daemon that cannot listen fails before it has started a child or written the presets, the state
-// or the key: a second daemon started on an address that is in use leaves the data directory as it is, apart from
-// the log directory. Nothing else keeps two daemons with different addresses off one data directory.
+// wireDaemon is Wire. It is a variable only so that a test can hold a daemon in its starting state.
+var wireDaemon = Wire
+
+// serve runs the daemon until the parent context ends or a shutdown signal arrives. It binds the listen address first,
+// so that a daemon that cannot listen fails before it touches the data directory, apart from the log directory. It
+// then answers at once: the health route says that it is starting and what it is doing, and every route that needs
+// the backend is refused with a Retry-After, until the daemon is wired and the full handler takes over. A stop that
+// arrives while it starts ends it without an error.
 func serve(parent context.Context, cfg config.Config, opts WireOptions) error {
-	logger, closeLog, err := logging.Setup(cfg.DataDir, slog.LevelInfo)
+	logger, closeLog, err := logging.Setup(cfg.DataDir, stderrLevel(opts.Service))
 	if err != nil {
 		return err
 	}
@@ -116,28 +129,85 @@ func serve(parent context.Context, cfg config.Config, opts WireOptions) error {
 	}
 	defer func() { _ = ln.Close() }()
 	opts.Logger = logger
-	wired, err := Wire(ctx, cfg, opts)
+	steps := &progress{}
+	steps.set(stepChecking)
+	handler := newFront(startingHandler(ctx, cfg, steps, logger))
+	srv, failed := startHTTP(ln, handler, cfg.DataDir, logger)
+	wired, err := start(ctx, cfg, opts, steps)
 	if err != nil {
+		shutdownServer(srv, shutdownGrace, logger)
+		if ctx.Err() != nil {
+			return nil // asked to stop while starting
+		}
 		return err
 	}
-	return serveOn(ctx, ln, wired, logger, shutdownGrace)
+	handler.set(wired.Handler)
+	return await(ctx, srv, failed, wired.Backend, logger, shutdownGrace)
 }
 
-// serveOn serves the wired daemon on ln until ctx ends. It then shuts down in order: the HTTP server, within the
-// grace period, and the backend.
-func serveOn(ctx context.Context, ln net.Listener, wired *Wired, logger *slog.Logger, grace time.Duration) error {
-	srv := &http.Server{Handler: wired.Handler, ReadHeaderTimeout: readHeaderTimeout}
+// stderrLevel is the level from which the daemon's lines reach stderr: info when run by hand, warn when a service
+// manager runs it and keeps what it prints.
+func stderrLevel(service bool) slog.Level {
+	if service {
+		return slog.LevelWarn
+	}
+	return slog.LevelInfo
+}
+
+// startingHandler is what the daemon answers with before it is wired. Its version route names the build this
+// taraengine pins; the full handler names the one it runs, which differs only for a configured runtime_dir.
+func startingHandler(ctx context.Context, cfg config.Config, steps *progress, logger *slog.Logger) http.Handler {
+	build := ""
+	if lock, err := pinnedLock(); err == nil {
+		build = lock.Build
+	}
+	return api.NewStarting(api.StartingDeps{
+		Config: cfg, Version: version.Version, Build: build, Detail: steps.detail, Logger: logger,
+		Platform: platformKey(goruntime.GOOS, goruntime.GOARCH, runtime.DriverVersion(ctx, runtime.ExecRunner)),
+	})
+}
+
+// start takes the data directory's lock and wires the daemon on it, saying at each step where it is. Once the backend
+// adopted the lock, its Stop lets go of it; a lock nobody adopted is let go of here.
+func start(ctx context.Context, cfg config.Config, opts WireOptions, steps *progress) (*Wired, error) {
+	lock, err := llamaserver.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	steps.set(stepStarting)
+	opts.HeldLock = lock
+	wired, err := wireDaemon(ctx, cfg, opts)
+	if err != nil {
+		_ = lock.Close() // a backend whose start failed closed it already, which makes this a no-op
+		return nil, err
+	}
+	return wired, nil
+}
+
+// startHTTP serves h on ln in the background and logs where. failed carries the error of a server that stops by
+// itself.
+func startHTTP(ln net.Listener, h http.Handler, dataDir string, logger *slog.Logger) (*http.Server, <-chan error) {
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: readHeaderTimeout}
 	failed := make(chan error, 1)
 	go func() { failed <- srv.Serve(ln) }()
-	logger.Info("taraengine listening", "listen", ln.Addr().String(), "data_dir", wired.Config.DataDir)
+	logger.Info("taraengine listening", "listen", ln.Addr().String(), "data_dir", dataDir)
+	return srv, failed
+}
+
+// await serves until ctx ends or the server stops by itself. It then shuts down in order: the HTTP server, within
+// the grace period, and the backend.
+func await(
+	ctx context.Context, srv *http.Server, failed <-chan error, be *llamaserver.Backend, logger *slog.Logger,
+	grace time.Duration,
+) error {
 	select {
 	case err := <-failed:
-		return errors.Join(fmt.Errorf("serve: %w", err), wired.Backend.Stop(context.Background()))
+		return errors.Join(fmt.Errorf("serve: %w", err), be.Stop(context.Background()))
 	case <-ctx.Done():
 	}
 	logger.Info("taraengine stopping")
 	shutdownServer(srv, grace, logger)
-	return wired.Backend.Stop(context.Background())
+	return be.Stop(context.Background())
 }
 
 // shutdownServer lets the requests in flight finish for the grace period and then closes whatever is left, so that

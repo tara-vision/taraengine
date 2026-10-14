@@ -36,6 +36,7 @@ const otherTier = "other"
 type WireOptions struct {
 	Attach    string
 	AttachKey string
+	Service   bool // run by a service manager: serve --service
 	Logger    *slog.Logger
 	HeldLock  *os.File
 }
