@@ -1,7 +1,12 @@
 package cli
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -12,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -305,4 +311,102 @@ func TestStartLetsGoOfTheLockWhenTheRuntimeStepFails(t *testing.T) {
 		t.Fatalf("the lock was let go of: %v", err)
 	}
 	_ = lock.Close()
+}
+
+func TestStartRefusesADataDirectoryAnotherDaemonHoldsBeforeItFetchesOrRemovesAnything(t *testing.T) {
+	r := newSelfRelease(t, 0)
+	dataDir := t.TempDir()
+	stale := filepath.Join(runtimeRoot(dataDir), "b10000")
+	if err := os.MkdirAll(stale, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	held, err := llamaserver.LockDataDir(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = held.Close() })
+	_, err = start(context.Background(), serviceConfig(dataDir), WireOptions{Service: true}, &progress{})
+	if err == nil || !strings.Contains(err.Error(), "in use by another taraengine") {
+		t.Fatalf("got %v", err)
+	}
+	if n := r.requests.Load(); n != 0 {
+		t.Fatalf("a second daemon downloaded %d times before it had the lock", n)
+	}
+	if _, err := os.Stat(stale); err != nil {
+		t.Fatalf("a second daemon removed a build under the first one: %v", err)
+	}
+}
+
+// cudaRelease serves the fake runtime and a CUDA runtime bundle that holds libcudart.so.12, and pins both for
+// linux/amd64/cuda12 under the asset names of the embedded lock. It records the paths it was asked for.
+func cudaRelease(t *testing.T) (runtime.Lock, *[]string) {
+	t.Helper()
+	embedded, err := runtime.LoadLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := runtime.Platform{OS: "linux", Arch: "amd64", Accel: "cuda12"}.Key()
+	server, bundle := fakeRuntimeTarball(t), cudartTarball(t)
+	body := "build: " + embedded.Build + "\nassets:\n  " + key + ":\n    asset: " + embedded.Assets[key].Asset +
+		"\n    sha256: " + sha256Hex(server) + "\ncudart:\n  " + key + ":\n    asset: " + embedded.Cudart[key].Asset +
+		"\n    sha256: " + sha256Hex(bundle) + "\n"
+	lock, err := runtime.ParseLock([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked = append(asked, r.URL.Path)
+		mu.Unlock()
+		body := server
+		if strings.HasSuffix(r.URL.Path, "/"+embedded.Cudart[key].Asset) {
+			body = bundle
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	previousLock, previousBase := pinnedLock, serviceReleaseBase
+	pinnedLock = func() (runtime.Lock, error) { return lock, nil }
+	serviceReleaseBase = srv.URL
+	t.Cleanup(func() { pinnedLock, serviceReleaseBase = previousLock, previousBase })
+	return lock, &asked
+}
+
+func cudartTarball(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := "ELF"
+	if err := tw.WriteHeader(&tar.Header{Name: "cudart/libcudart.so.12", Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(body))}); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = tw.Write([]byte(body))
+	_ = tw.Close()
+	_ = gz.Close()
+	return buf.Bytes()
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestServiceModeBringsTheCUDARuntimeAMachineLacks(t *testing.T) {
+	lock, asked := cudaRelease(t)
+	withPlatform(t, runtime.Platform{OS: "linux", Arch: "amd64", Accel: "cuda12"}, nil)
+	dataDir := t.TempDir()
+	if err := ensureRuntime(context.Background(), serviceConfig(dataDir), &progress{}, quiet()); err != nil {
+		t.Fatal(err)
+	}
+	key := runtime.Platform{OS: "linux", Arch: "amd64", Accel: "cuda12"}.Key()
+	if !slices.Contains(*asked, "/"+lock.Build+"/"+lock.Cudart[key].Asset) {
+		t.Fatalf("the CUDA runtime bundle was not fetched: %v", *asked)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeRoot(dataDir), lock.Build, "libcudart.so.12")); err != nil {
+		t.Fatalf("the CUDA runtime did not land beside llama-server: %v", err)
+	}
 }

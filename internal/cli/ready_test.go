@@ -264,3 +264,65 @@ func TestTheTestsNeverDriveTheMachinesServiceManager(t *testing.T) {
 		t.Fatalf("a test drove the machine's service manager:\n%s", data)
 	}
 }
+
+// lateAgent is an agent whose engine binds its address a while after the start, as a real one does: the first polls
+// after the start are refused.
+type lateAgent struct {
+	*fakeManager
+	addr  string
+	delay time.Duration
+	t     *testing.T
+}
+
+func (a *lateAgent) Start(ctx context.Context) error {
+	if err := a.fakeManager.Start(ctx); err != nil {
+		return err
+	}
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/health" {
+			_, _ = w.Write([]byte(`{"status":"ok","backend":"llama.cpp"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	})}
+	bound := make(chan struct{})
+	a.t.Cleanup(func() { <-bound; _ = srv.Close() })
+	go func() {
+		defer close(bound)
+		time.Sleep(a.delay)
+		ln, err := net.Listen("tcp", a.addr)
+		if err != nil {
+			a.t.Error(err)
+			return
+		}
+		go func() { _ = srv.Serve(ln) }()
+	}()
+	return nil
+}
+
+func TestTheFirstUseStartWaitsForAnEngineThatBindsLate(t *testing.T) {
+	fastWaits(t, time.Minute, 2*time.Second)
+	addr := freeAddr(t)
+	agent := &lateAgent{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true}}, addr: addr,
+		delay: 200 * time.Millisecond, t: t}
+	withManager(t, agent.fakeManager, "darwin", 501)
+	newServiceManager = func() (service.Manager, error) { return agent, nil }
+	out, err := run(t, "list", "--config", configListeningOn(t, addr))
+	if err != nil || !strings.Contains(out, "NAME") {
+		t.Fatalf("the first command waits through the refusals of an engine that has not bound yet: %v\n%s", err, out)
+	}
+}
+
+func TestTheFirstUseStartIsTheMacOSAgentsOnly(t *testing.T) {
+	fastWaits(t, time.Minute, 100*time.Millisecond)
+	m := &fakeManager{state: service.State{Installed: true, Enabled: true}}
+	withManager(t, m, "linux", 1000)
+	_, err := run(t, "list", "--config", configListeningOn(t, "127.0.0.1:1"))
+	if err == nil || !strings.Contains(err.Error(), "the service did not start") {
+		t.Fatalf("the Linux system service starts at boot, not with a command: %v", err)
+	}
+	if strings.Contains(strings.Join(m.calls, " "), "start") {
+		t.Fatalf("no start on Linux: %v", m.calls)
+	}
+}
