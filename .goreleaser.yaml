@@ -93,6 +93,14 @@ nfpms:
       postinstall: packaging/postinstall.sh
       preremove: packaging/preremove.sh
       postremove: packaging/postremove.sh
+    # llama.cpp's Linux builds link GCC's OpenMP library, which a minimal system lacks; the names differ by family.
+    overrides:
+      deb:
+        dependencies:
+          - libgomp1
+      rpm:
+        dependencies:
+          - libgomp
 
 release:
   github:

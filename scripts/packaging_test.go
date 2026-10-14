@@ -4,8 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // maintainerScript runs packaging/<name> with the arguments dpkg or rpm would give, with a fake taraengine that logs
@@ -75,6 +78,33 @@ func TestPostremoveClearsTheDataOnADebianPurgeOnly(t *testing.T) {
 	for _, args := range [][]string{{"remove"}, {"0"}, {"1"}, {"upgrade"}} {
 		if code, log := maintainerScript(t, "postremove.sh", nil, args...); code != 0 || log != "" {
 			t.Errorf("%v: exit %d, %q", args, code, log)
+		}
+	}
+}
+
+// The packages depend on the OpenMP library that llama.cpp's Linux builds link, which a minimal Ubuntu lacks, so
+// apt and dnf install it with taraengine.
+func TestThePackagesDependOnTheOpenMPLibrary(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Nfpms []struct {
+			Overrides map[string]struct {
+				Dependencies []string `yaml:"dependencies"`
+			} `yaml:"overrides"`
+		} `yaml:"nfpms"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Nfpms) != 1 {
+		t.Fatalf("want one package definition, got %d", len(cfg.Nfpms))
+	}
+	for format, want := range map[string]string{"deb": "libgomp1", "rpm": "libgomp"} {
+		if got := cfg.Nfpms[0].Overrides[format].Dependencies; !slices.Contains(got, want) {
+			t.Errorf("the %s depends on %v, want %s among them", format, got, want)
 		}
 	}
 }
