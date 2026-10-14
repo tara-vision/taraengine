@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refuses a directory that the Linux service cannot reach.
 - The Homebrew cask `tara-vision/taracode/taraengine`, for Apple Silicon Macs.
 - The deb and rpm packages install, upgrade and remove the system service, and they depend on the OpenMP library that
-  llama.cpp needs (`libgomp1` and `libgomp`).
+  llama.cpp needs: the deb on `libgomp1`, the rpm on `libgomp.so.1` itself, which every rpm family provides.
 
 ### Changed
 - `serve` answers from the moment it binds: `GET /api/health` says `starting` and `GET /api/version` answers as it
@@ -37,8 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loader could not find.
 - A pull gives its model's name back before its last event, so a command right after it never meets the pull as
   running.
-- `taraengine service install` on Linux refuses a binary under `/home`, `/root` or `/run/user`, which the unit hides
-  from the engine.
+- `taraengine service install` on Linux refuses a binary under `/home`, `/root`, `/run/user`, `/tmp` or `/var/tmp`, or
+  a link into one of them, which the unit hides from the engine.
 - The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple.
 
 ## [0.2.0] - 2026-10-13
