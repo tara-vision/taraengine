@@ -243,3 +243,24 @@ func TestAStopEndsTheWaitBetweenPolls(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// TestTheTestsNeverDriveTheMachinesServiceManager runs a command that finds no engine, with a launchctl and a
+// systemctl on PATH that log every call: the default manager of the tests reaches neither, so no test can load or
+// start the service of the machine it runs on.
+func TestTheTestsNeverDriveTheMachinesServiceManager(t *testing.T) {
+	fastWaits(t, time.Second, 100*time.Millisecond)
+	bin, calls := t.TempDir(), filepath.Join(t.TempDir(), "calls")
+	for _, name := range []string{"launchctl", "systemctl"} {
+		script := "#!/bin/sh\necho \"$0 $*\" >> '" + calls + "'\n"
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o755); err != nil { //nolint:gosec // G306: a test script
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if _, err := run(t, "list", "--config", configListeningOn(t, "127.0.0.1:1")); err == nil {
+		t.Fatal("no engine answers at 127.0.0.1:1")
+	}
+	if data, err := os.ReadFile(calls); err == nil {
+		t.Fatalf("a test drove the machine's service manager:\n%s", data)
+	}
+}

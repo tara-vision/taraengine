@@ -26,8 +26,11 @@ var (
 	processEUID       = os.Geteuid
 	executable        = os.Executable
 	lookPath          = exec.LookPath
-	newServiceManager = func() (service.Manager, error) { return systemManager(hostOS) }
+	newServiceManager = hostServiceManager
 )
+
+// hostServiceManager is the service manager of the system this binary runs on.
+func hostServiceManager() (service.Manager, error) { return systemManager(hostOS) }
 
 // systemManager is the service manager of a system: the user's LaunchAgent on macOS, a system service on Linux.
 func systemManager(goos string) (service.Manager, error) {

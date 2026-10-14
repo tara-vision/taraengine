@@ -303,7 +303,7 @@ func TestTheDefaultManagerFollowsTheHostSystem(t *testing.T) {
 	previous := hostOS
 	hostOS = "plan9"
 	t.Cleanup(func() { hostOS = previous })
-	if _, err := newServiceManager(); err == nil || !strings.Contains(err.Error(), "plan9") {
+	if _, err := hostServiceManager(); err == nil || !strings.Contains(err.Error(), "plan9") {
 		t.Fatalf("got %v", err)
 	}
 }
