@@ -283,9 +283,9 @@ func TestServiceStatusOfAnEngineThatAnswersOddly(t *testing.T) {
 
 func TestServiceStatusReportsAConfigItCannotRead(t *testing.T) {
 	withManager(t, &fakeManager{}, "linux", 1000)
-	if _, err := run(t, "service", "status", "--config", filepath.Join(t.TempDir(), "missing.yaml")); err == nil ||
-		!strings.Contains(err.Error(), "missing.yaml") {
-		t.Fatalf("got %v", err)
+	out, err := run(t, "service", "status", "--config", filepath.Join(t.TempDir(), "missing.yaml"))
+	if ExitCode(err) != 1 || !strings.Contains(out, "missing.yaml") {
+		t.Fatalf("got %v\n%s", err, out)
 	}
 }
 
@@ -305,5 +305,37 @@ func TestTheDefaultManagerFollowsTheHostSystem(t *testing.T) {
 	t.Cleanup(func() { hostOS = previous })
 	if _, err := hostServiceManager(); err == nil || !strings.Contains(err.Error(), "plan9") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestServiceStatusShowsTheServiceWhenTheConfigurationIsBroken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("listen: [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withManager(t, &fakeManager{state: service.State{Installed: true, Enabled: true, Loaded: true, LastExit: "1",
+		Definition: "/agents/vision.tara.taraengine.plist", Logs: []string{"/logs/service.log"}}}, "darwin", 501)
+	out, err := run(t, "service", "status", "--config", path)
+	if ExitCode(err) != 1 {
+		t.Fatalf("a configuration that cannot be read ends status with 1: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"Service: installed (/agents/vision.tara.taraengine.plist), enabled, not running (last exit 1)\n",
+		"Engine: cannot read the configuration: ",
+		"Logs: /logs/service.log, ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q: the case status is for is a service that a broken configuration keeps down\n%s", want, out)
+		}
+	}
+}
+
+func TestServiceStatusReportsWhatItCannotPrint(t *testing.T) {
+	withManager(t, &fakeManager{state: service.State{Installed: true}}, "linux", 1000)
+	boom := errors.New("stdout is closed")
+	err := runWithContext(context.Background(), t, &failingWriter{err: boom}, "service", "status", "--config",
+		filepath.Join(t.TempDir(), "missing.yaml"))
+	if !errors.Is(err, boom) {
+		t.Fatalf("got %v, want the write error", err)
 	}
 }

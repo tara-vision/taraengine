@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/tara-vision/taraengine/internal/config"
 	"github.com/tara-vision/taraengine/internal/service"
 	"github.com/tara-vision/taraengine/pkg/api"
 	"github.com/tara-vision/taraengine/pkg/client"
@@ -124,7 +125,9 @@ func sameFile(a, b string) bool {
 }
 
 // serviceStatus prints the service as its manager sees it, the engine as its API answers, and where the logs are.
-// It ends with status 3 when the service does not run or the engine does not answer.
+// It ends with status 3 when the service does not run or the engine does not answer, and with 1 when the
+// configuration cannot be read: the service is shown all the same, since a broken configuration is what keeps a
+// service down, and the logs say why.
 func serviceStatus(cmd *cobra.Command, flags *globalFlags, dataDir string) error {
 	m, err := newServiceManager()
 	if err != nil {
@@ -134,17 +137,19 @@ func serviceStatus(cmd *cobra.Command, flags *globalFlags, dataDir string) error
 	if err != nil {
 		return err
 	}
-	cfg, err := loadConfig(flags)
-	if err != nil {
-		return err
+	p := &printer{w: cmd.OutOrStdout()}
+	p.printf("Service: %s\n", serviceLine(st))
+	cfg, cfgErr := loadConfig(flags)
+	answers := false
+	if cfgErr != nil {
+		p.printf("Engine: cannot read the configuration: %v\n", cfgErr)
+		cfg = config.Default()
+	} else {
+		answers = engineLine(cmd.Context(), p, flags.withEnvironment().withConfig(cfg))
 	}
 	if dataDir == "" {
 		dataDir = cfg.DataDir
 	}
-	f := flags.withEnvironment().withConfig(cfg)
-	p := &printer{w: cmd.OutOrStdout()}
-	p.printf("Service: %s\n", serviceLine(st))
-	answers := engineLine(cmd.Context(), p, f)
 	logs := st.Logs
 	if hostOS == "darwin" {
 		logs = append(logs, filepath.Join(dataDir, "logs", "taraengine.log"))
@@ -152,10 +157,15 @@ func serviceStatus(cmd *cobra.Command, flags *globalFlags, dataDir string) error
 	if len(logs) > 0 {
 		p.printf("Logs: %s\n", strings.Join(logs, ", "))
 	}
-	if p.err == nil && (!st.Running || !answers) {
+	switch {
+	case p.err != nil:
+		return p.err
+	case cfgErr != nil:
+		return &ExitError{Code: 1}
+	case !st.Running || !answers:
 		return &ExitError{Code: statusNotRunning}
 	}
-	return p.err
+	return nil
 }
 
 // serviceLine is what the manager says about the service, in one line.
