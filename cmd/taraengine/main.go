@@ -9,8 +9,9 @@ import (
 )
 
 func main() {
-	if err := cli.Execute(); err != nil {
+	err := cli.Execute()
+	if err != nil && err.Error() != "" {
 		fmt.Fprintln(os.Stderr, "taraengine:", err)
-		os.Exit(1)
 	}
+	os.Exit(cli.ExitCode(err))
 }
