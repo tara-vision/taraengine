@@ -13,7 +13,7 @@ cask "taraengine" do
   end
 
   depends_on arch: :arm64
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   binary "taraengine-darwin-arm64", target: "taraengine"
 
@@ -30,7 +30,7 @@ cask "taraengine" do
   # new binary and the step above restarts the agent on it.
   uninstall_postflight_steps do
     run "/bin/sh",
-        args:         ["-c", "launchctl kill SIGTERM gui/$(id -u)/vision.tara.taraengine"],
+        args:         ["-c", "launchctl kill SIGTERM gui/$(id -u)/vision.tara.taraengine 2>/dev/null"],
         must_succeed: false
     remove "Library/LaunchAgents/vision.tara.taraengine.plist", base: :home
   end
