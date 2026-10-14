@@ -27,7 +27,7 @@ func golden(t *testing.T, name string, got []byte) {
 	}
 }
 
-func TestThePlistRunsTheServiceAndKeepsItAliveWhileTheBinaryExists(t *testing.T) {
+func TestThePlistRunsTheServiceAndRestartsItAfterACrash(t *testing.T) {
 	got := RenderPlist("/opt/homebrew/bin/taraengine", "/Users/someone/Library/Logs/taraengine/service.log")
 	golden(t, "vision.tara.taraengine.plist", got)
 }
@@ -35,7 +35,7 @@ func TestThePlistRunsTheServiceAndKeepsItAliveWhileTheBinaryExists(t *testing.T)
 func TestThePlistEscapesWhatXMLWouldMisread(t *testing.T) {
 	got := RenderPlist("/Users/a&b/<bin>/taraengine", "/Users/a&b/Library/Logs/taraengine/service.log")
 	if !strings.Contains(string(got), "<string>/Users/a&amp;b/&lt;bin&gt;/taraengine</string>") ||
-		!strings.Contains(string(got), "<key>/Users/a&amp;b/&lt;bin&gt;/taraengine</key>") {
+		!strings.Contains(string(got), "<string>/Users/a&amp;b/Library/Logs/taraengine/service.log</string>") {
 		t.Fatalf("the paths are escaped:\n%s", got)
 	}
 }

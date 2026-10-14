@@ -19,7 +19,6 @@ import (
 const (
 	noteInstalled = "installed and started the taraengine service"
 	noteRestarted = "restarted the taraengine service"
-	noteRelinked  = "the taraengine service restarts on the new binary"
 	noteOldBinary = "the taraengine service runs %s until your next login and %s after it; " +
 		"`taraengine service stop` and `taraengine service start` move it now"
 	noteStopped    = "the taraengine service is stopped; `taraengine service start` starts it"
@@ -92,12 +91,11 @@ func (l *Launchd) launchctl(ctx context.Context, args ...string) error {
 }
 
 // Install writes the plist for binary and makes the agent run it. A loaded agent is restarted in place, or loaded
-// again when its definition changed; an agent that is not loaded is loaded. A stopped agent stays stopped. Inside
-// Homebrew's sandbox launchd refuses to load an agent, and a kickstart there blocked an upgrade for minutes: a first
-// install starts at the next login or with the first command, and an upgrade restarts nothing itself. The old cask's
-// uninstall step stopped the agent after Homebrew unlinked its binary, Homebrew links the new binary before this step,
-// and KeepAlive on that path brings the agent back on it. An agent that another binary's definition loaded keeps that
-// binary until the definition is loaded again, and Install says so.
+// again when its definition changed or it runs another binary; an agent that is not loaded is loaded. A stopped agent
+// stays stopped. Inside Homebrew's sandbox launchd refuses to load an agent: a first install starts at the next login
+// or with the first command. A cask upgrade finds the agent loaded and down, because the old cask's uninstall step
+// ended it cleanly, and starts it on the binary that Homebrew has just linked; an agent that another binary's
+// definition loaded keeps that binary until the definition is loaded again, and Install says so.
 func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	changed, err := l.writePlist(RenderPlist(binary, l.LogPath()))
 	if err != nil {
@@ -114,9 +112,7 @@ func (l *Launchd) Install(ctx context.Context, binary string) (string, error) {
 	switch {
 	case loaded && l.Sandboxed && program != "" && program != binary:
 		return fmt.Sprintf(noteOldBinary, program, binary), nil
-	case loaded && l.Sandboxed:
-		return noteRelinked, nil
-	case loaded && !changed && (program == "" || program == binary):
+	case loaded && (l.Sandboxed || !changed && (program == "" || program == binary)):
 		return noteRestarted, l.launchctl(ctx, "kickstart", "-k", l.target())
 	case loaded:
 		if err := l.bootout(ctx); err != nil {
@@ -215,7 +211,7 @@ func (l *Launchd) Start(ctx context.Context) error {
 
 // Stop disables the agent, so that it stays stopped across logins until a start, and then unloads it. The stop is
 // written first, so that it holds even when the job takes its time to exit or the unload fails. A kill would not do:
-// KeepAlive starts a killed agent again while its binary exists.
+// the agent would load again at the next login.
 func (l *Launchd) Stop(ctx context.Context) error {
 	if err := l.launchctl(ctx, "disable", l.target()); err != nil {
 		return err

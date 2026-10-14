@@ -219,9 +219,9 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 			t.Fatalf("%q %v", note, err)
 		}
 	})
-	// In the sandbox launchctl cannot restart the agent: a kickstart there blocks the upgrade. Homebrew links the new
-	// binary before this step, and the agent's KeepAlive on that path brings it back on the new binary by itself.
-	t.Run("an upgrade leaves the restart to launchd", func(t *testing.T) {
+	// The old cask's uninstall step ended the agent cleanly, and KeepAlive restarts it only after a crash, so it waits,
+	// loaded and healthy, for this step to start it on the binary that Homebrew has just linked.
+	t.Run("an upgrade starts the loaded agent on the new binary", func(t *testing.T) {
 		for name, prewritten := range map[string]bool{"a changed plist": false, "the same plist": true} {
 			fake := &fakeLaunchctl{loaded: true, running: true, program: "/opt/homebrew/bin/taraengine",
 				fail: map[string]bool{"bootstrap": true}}
@@ -232,11 +232,12 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 				}
 			}
 			note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
-			if err != nil || note != "the taraengine service restarts on the new binary" {
+			if err != nil || note != "restarted the taraengine service" {
 				t.Fatalf("%s: %q %v", name, note, err)
 			}
-			if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label}) {
-				t.Fatalf("%s: only reads, no restart: %v", name, fake.calls)
+			if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label,
+				"launchctl kickstart -k gui/501/" + Label}) {
+				t.Fatalf("%s: the loaded agent is started on the new binary: %v", name, fake.calls)
 			}
 		}
 	})
@@ -256,12 +257,12 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 			t.Fatalf("only reads: %v", fake.calls)
 		}
 	})
-	t.Run("a loaded agent whose program launchctl does not name restarts on the linked binary", func(t *testing.T) {
+	t.Run("a loaded agent whose program launchctl does not name is started on the linked binary", func(t *testing.T) {
 		fake := &fakeLaunchctl{loaded: true, running: true, fail: map[string]bool{"bootstrap": true}}
 		l := newLaunchd(t, fake, true)
 		if note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine"); err != nil ||
-			note != "the taraengine service restarts on the new binary" {
-			t.Fatalf("%q %v", note, err)
+			note != "restarted the taraengine service" || !slices.Contains(fake.calls, "launchctl kickstart -k gui/501/"+Label) {
+			t.Fatalf("%q %v %v", note, err, fake.calls)
 		}
 	})
 	t.Run("outside the sandbox a failed load is an error", func(t *testing.T) {
