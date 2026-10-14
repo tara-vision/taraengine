@@ -182,7 +182,7 @@ curl -fsSL --fail-early -O $BASE/$BIN -O $BASE/checksums.txt -O $BASE/checksums.
     --certificate-identity-regexp 'https://github.com/tara-vision/taraengine/.github/workflows/release.yml@refs/tags/v.*' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt && \
   grep " $BIN\$" checksums.txt > $BIN.sha256 && sha256sum -c $BIN.sha256 && \
-  chmod +x $BIN && sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
+  sudo mkdir -p /usr/local/bin && sudo install -m 0755 $BIN /usr/local/bin/taraengine
 ```
 
 The steps form one chain, so a download, a signature or a checksum that fails stops it before anything is installed.
