@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
 ### Added
 - `taraengine service install | uninstall | start | stop | restart | status` runs taraengine as a service: a LaunchAgent
   of the user on macOS, a systemd system service under its own `taraengine` user on Linux. A stop is remembered until
