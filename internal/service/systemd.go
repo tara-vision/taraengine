@@ -66,6 +66,34 @@ func (s *Systemd) systemctl(ctx context.Context, args ...string) error {
 	return s.run(ctx, "systemctl", args...)
 }
 
+// hiddenFromTheUnit reports whether path lies in a directory that the unit hides from the engine: ProtectHome hides
+// /home, /root and /run/user, and PrivateTmp gives it a /tmp and a /var/tmp of its own.
+func hiddenFromTheUnit(path string) bool {
+	clean := filepath.Clean(path)
+	for _, dir := range []string{"/home", "/root", "/run/user", "/tmp", "/var/tmp"} {
+		if clean == dir || strings.HasPrefix(clean, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// linkTarget follows path while it is a symbolic link, up to eight links, and returns where it ends: a binary on PATH
+// can be a link into a directory that the unit hides. A path that is no link, or does not exist, is returned as it is.
+func linkTarget(path string) string {
+	for range 8 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return path
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
+	return path
+}
+
 // Install sets up the taraengine user, its directories and, when there is none, its configuration, writes the unit
 // for binary and runs it: a first install, and an upgrade of a service that is enabled, enable and restart it. A
 // service an admin disabled stays disabled, and moves to the new binary when it still runs. On a system without
@@ -76,6 +104,14 @@ func (s *Systemd) Install(ctx context.Context, binary string) (string, error) {
 	}
 	if !s.booted() {
 		return noteNoSystemd, nil
+	}
+	if target := linkTarget(binary); hiddenFromTheUnit(binary) || hiddenFromTheUnit(target) {
+		what := binary
+		if target != binary {
+			what += ", a link to " + target
+		}
+		return "", fmt.Errorf("the service could not run %s: its unit hides /home, /root, /run/user, /tmp and /var/tmp; "+
+			"install the binary elsewhere, such as /usr/local/bin", what)
 	}
 	unit, err := RenderUnit(binary)
 	if err != nil {

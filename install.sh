@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # taraengine installer: the binary of the latest release, checked against the release's checksums.txt, and the
-# service that runs it (a LaunchAgent on macOS, a systemd system service on Linux).
+# service that runs it (a LaunchAgent on macOS, a systemd system service on Linux). On Linux it first installs libgomp,
+# the OpenMP library that llama.cpp needs, with the system's package manager when the loader cannot find it.
 # Usage: curl -fsSL https://engine.tara.vision/install.sh | bash
 #
 # Environment:
@@ -92,6 +93,67 @@ verify_checksum() {
     fi
 }
 
+# before_0_3 reports whether a tag such as v0.2.0 names a release before v0.3.0, the first with the service commands. A
+# tag it cannot read is left to the download.
+before_0_3() {
+    local v="${1#v}" major minor
+    major="${v%%.*}"
+    v="${v#*.}"
+    minor="${v%%.*}"
+    [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+    [ "$major" -eq 0 ] && [ "$minor" -lt 3 ]
+}
+
+# check_service_dir stops before anything is installed when the Linux service could not run the binary: its unit hides
+# /home, /root and /run/user from the engine.
+check_service_dir() {
+    [ "${TARAENGINE_NO_SERVICE:-}" = "1" ] && return 0
+    case "${INSTALL_DIR%/}/" in
+        /home/* | /root/* | /run/user/*)
+            error "the service could not run ${INSTALL_DIR%/}/${BINARY_NAME}: its unit hides /home, /root and /run/user. Choose another INSTALL_DIR, such as /usr/local/bin, or set TARAENGINE_NO_SERVICE=1 for the binary alone"
+            ;;
+    esac
+}
+
+# has_openmp reports whether the loader finds libgomp.so.1, the OpenMP library of GCC that llama.cpp's Linux builds
+# link. ldconfig is not on every user's PATH. grep reads the whole listing: one that stopped at the match would end
+# ldconfig with SIGPIPE, which pipefail takes for a missing library.
+has_openmp() {
+    local ldconfig
+    ldconfig=$(command -v ldconfig || echo /sbin/ldconfig)
+    "$ldconfig" -p 2>/dev/null | grep 'libgomp\.so\.1' >/dev/null
+}
+
+# ensure_openmp installs libgomp with the system's package manager when the loader cannot find it. It runs before
+# anything else is installed, so a system that cannot get it is left as it was. A package manager that fails after it
+# installed the library, as zypper does when another repository cannot be refreshed, lets the installation go on; apt's
+# install waits up to two minutes for a lock that unattended upgrades hold on a fresh machine.
+ensure_openmp() {
+    local package
+    has_openmp && return 0
+    if command -v apt-get >/dev/null 2>&1; then
+        package="libgomp1"
+        info "Installing ${package}, the OpenMP library that llama.cpp needs..."
+        as_root apt-get update -qq || true
+        as_root env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq "$package" ||
+            has_openmp || openmp_failed "$package"
+    elif command -v dnf >/dev/null 2>&1; then
+        package="libgomp"
+        info "Installing ${package}, the OpenMP library that llama.cpp needs..."
+        as_root dnf install -y -q "$package" || has_openmp || openmp_failed "$package"
+    elif command -v zypper >/dev/null 2>&1; then
+        package="libgomp1"
+        info "Installing ${package}, the OpenMP library that llama.cpp needs..."
+        as_root zypper --non-interactive install "$package" || has_openmp || openmp_failed "$package"
+    else
+        error "taraengine needs libgomp.so.1, the OpenMP library of GCC, and this script knows no package manager on this system: install it, then run this script again"
+    fi
+}
+
+openmp_failed() {
+    error "Could not install $1, the OpenMP library that llama.cpp needs; install it, then run this script again"
+}
+
 # as_root runs a command as root: directly for root, through sudo otherwise.
 as_root() {
     if [ "$(id -u)" = "0" ]; then
@@ -167,6 +229,9 @@ main() {
     local platform version
     platform=$(detect_platform)
     info "Detected: ${platform}"
+    if [ "${platform%-*}" = "linux" ]; then
+        check_service_dir
+    fi
     version="${TARAENGINE_VERSION:-}"
     if [ -z "$version" ]; then
         info "Looking up the latest release..."
@@ -174,6 +239,12 @@ main() {
     fi
     [ -n "$version" ] || error "Could not determine the version to install"
     info "Version: ${version}"
+    if [ "${TARAENGINE_NO_SERVICE:-}" != "1" ] && before_0_3 "$version"; then
+        error "taraengine ${version} has no service commands, which came with v0.3.0: set TARAENGINE_VERSION to v0.3.0 or later, or TARAENGINE_NO_SERVICE=1 for the binary alone"
+    fi
+    if [ "${platform%-*}" = "linux" ]; then
+        ensure_openmp
+    fi
     install_binary "$version" "taraengine-${platform}"
     install_service "${platform%-*}"
     echo ""

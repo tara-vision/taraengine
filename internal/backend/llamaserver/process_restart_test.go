@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -289,5 +290,67 @@ func TestNewSupervisorDefaults(t *testing.T) {
 	cancel()
 	if err := s.opts.Sleep(ctx, time.Hour); !errors.Is(err, context.Canceled) {
 		t.Fatalf("the default sleep ended with %v, want the cancellation", err)
+	}
+}
+
+// A child that ends before it answers leaves the reason as its last line, such as a library that the loader cannot
+// find; the error carries it, so the daemon's log and the service's journal name the cause.
+func TestSupervisorStartNamesWhatTheChildLastLogged(t *testing.T) {
+	const reason = "llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file"
+	// Under -cover the helper is a coverage binary, which without GOCOVERDIR says so on its way out.
+	s, _, logPath := helperSupervisor(t, "HELPER_FAIL_START="+reason, "GOCOVERDIR="+t.TempDir())
+	if err := os.WriteFile(logPath, []byte("a line from an earlier run\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Start(context.Background())
+	if err == nil || !strings.HasSuffix(err.Error(), "exited with code 127 before becoming healthy: "+reason) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// Nothing that an earlier run logged is taken for the reason of this one.
+func TestSupervisorAwaitHealthyLeavesOutAnEarlierRunsLines(t *testing.T) {
+	earlier := "a line from an earlier run\n"
+	logPath := filepath.Join(t.TempDir(), "llama-server.log")
+	if err := os.WriteFile(logPath, []byte(earlier), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSupervisor(SupervisorOptions{LogPath: logPath, Health: func(context.Context) error { return errors.New("not yet") }})
+	c := &child{err: errors.New("killed"), logStart: int64(len(earlier))}
+	c.exited.Store(true)
+	err := s.awaitHealthy(context.Background(), c)
+	if err == nil || !strings.HasSuffix(err.Error(), "exited with code -1 before becoming healthy") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// A log that rotated since the child started is read from its beginning, and blank lines at its end are passed over.
+func TestSupervisorAwaitHealthyReadsARotatedLogFromItsStart(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "llama-server.log")
+	if err := os.WriteFile(logPath, []byte("the reason\n\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSupervisor(SupervisorOptions{LogPath: logPath, Health: func(context.Context) error { return errors.New("not yet") }})
+	c := &child{err: errors.New("killed"), logStart: 1 << 20}
+	c.exited.Store(true)
+	err := s.awaitHealthy(context.Background(), c)
+	if err == nil || !strings.HasSuffix(err.Error(), "before becoming healthy: the reason") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// Only the end of a long run's output is read, and the reason is still its last line.
+func TestSupervisorAwaitHealthyReadsTheEndOfALongRun(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "llama-server.log")
+	long := strings.Repeat("a line of the server's output\n", 1000) + "the reason\n"
+	if err := os.WriteFile(logPath, []byte(long), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSupervisor(SupervisorOptions{LogPath: logPath, Health: func(context.Context) error { return errors.New("not yet") }})
+	c := &child{err: errors.New("killed")}
+	c.exited.Store(true)
+	err := s.awaitHealthy(context.Background(), c)
+	if err == nil || !strings.HasSuffix(err.Error(), "before becoming healthy: the reason") {
+		t.Fatalf("got %v", err)
 	}
 }

@@ -20,9 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The commands that talk to the engine wait for one that is starting, and on macOS the first of them starts the
   installed agent.
 - `install.sh`, attached to every release and listed in `checksums.txt`, installs the binary and the service in one
-  command.
+  command. On Linux it first installs the OpenMP library that llama.cpp needs (`libgomp1` or `libgomp`) with the
+  system's package manager when the loader cannot find it. It installs a release from v0.3.0 on for the service, and it
+  refuses a directory that the Linux service cannot reach.
 - The Homebrew cask `tara-vision/taracode/taraengine`, for Apple Silicon Macs.
-- The deb and rpm packages install, upgrade and remove the system service.
+- The deb and rpm packages install, upgrade and remove the system service, and they depend on the OpenMP library that
+  llama.cpp needs: the deb on `libgomp1`, the rpm on `libgomp.so.1` itself, which every rpm family provides.
 
 ### Changed
 - `serve` answers from the moment it binds: `GET /api/health` says `starting` and `GET /api/version` answers as it
@@ -30,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pkg/api`: `Health.Status` can be `starting`; `HealthOK`, `HealthDegraded` and `HealthStarting` name the values.
 - `taraengine doctor` reports the runtime the daemon runs when a daemon answers, and it reports an engine that is
   starting without waiting for it.
+- A llama-server that ends before it answers is reported with the last line it wrote, such as a library that the
+  loader could not find.
+- A pull gives its model's name back before its last event, so a command right after it never meets the pull as
+  running.
+- `taraengine service install` on Linux refuses a binary under `/home`, `/root`, `/run/user`, `/tmp` or `/var/tmp`, or
+  a link into one of them, which the unit hides from the engine.
 - The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple.
 
 ## [0.2.0] - 2026-10-13

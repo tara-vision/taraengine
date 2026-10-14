@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -71,6 +72,8 @@ type child struct {
 	cmd    *exec.Cmd
 	exited atomic.Bool
 	err    error
+	// logStart is the size of the log when the child started: what it wrote begins there.
+	logStart int64
 }
 
 // exitInfo is one end of a run: a child that exited, with its pid, or a restart that could not start one.
@@ -277,10 +280,11 @@ func (s *Supervisor) spawn() (*child, error) {
 	cmd.Stdout, cmd.Stderr = s.log, s.log
 	cmd.WaitDelay = s.waitDelay // a model process that keeps the log pipe open cannot hold Wait
 	ownProcessGroup(cmd)
+	logStart := logSize(s.opts.LogPath)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("llamaserver: start %s: %w", s.opts.Binary, err)
 	}
-	c := &child{cmd: cmd}
+	c := &child{cmd: cmd, logStart: logStart}
 	s.mu.Lock()
 	s.cur = c
 	s.mu.Unlock()
@@ -311,7 +315,11 @@ func (s *Supervisor) awaitHealthy(ctx context.Context, c *child) error {
 		}
 		switch {
 		case c.exited.Load():
-			return fmt.Errorf("llamaserver: the server exited with code %d before becoming healthy", exitCode(c.err))
+			msg := fmt.Sprintf("llamaserver: the server exited with code %d before becoming healthy", exitCode(c.err))
+			if reason := lastLogLine(s.opts.LogPath, c.logStart); reason != "" {
+				msg += ": " + reason
+			}
+			return errors.New(msg)
 		case ctx.Err() != nil:
 			return ctx.Err()
 		case time.Now().After(deadline):
@@ -319,6 +327,46 @@ func (s *Supervisor) awaitHealthy(ctx context.Context, c *child) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// reasonTailBytes bounds how much of the end of a child's output a failed start reads for its reason.
+const reasonTailBytes = 4 << 10
+
+// logSize is the size of the log at path, or 0 when there is none yet.
+func logSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
+}
+
+// lastLogLine is the last line that a child wrote to the log at path since it started, at offset from: the line that
+// says why its start failed, such as a library that the loader could not find. A log shorter than from has rotated
+// since and is read from its beginning. Only the last reasonTailBytes are read, and a log that cannot be read gives no
+// line.
+func lastLogLine(path string, from int64) string {
+	f, err := os.Open(path) //nolint:gosec // the engine's own log
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	size, _ := f.Seek(0, io.SeekEnd) // a log that cannot be measured has nothing to say
+	if size < from {
+		from = 0
+	}
+	start := max(from, size-reasonTailBytes)
+	if start >= size {
+		return ""
+	}
+	window := make([]byte, size-start)
+	n, _ := f.ReadAt(window, start) // what could be read is all there is to say
+	text := printable(string(window[:n]))
+	if i := strings.IndexByte(text, '\n'); start > from && i >= 0 {
+		text = text[i+1:] // the window opens inside a line, so the first piece is left out
+	}
+	lines := strings.Split(strings.TrimRight(text, "\n\r\t "), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
 }
 
 // watch consumes exits, restarts with backoff, and gives up after five exits inside ten minutes. A

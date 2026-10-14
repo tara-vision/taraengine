@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -617,8 +618,8 @@ func TestPullFailsWhenTheIndexCannotBeWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	plans := map[string]plan{
-		"hf":    {ref: pull.Ref{Kind: pull.KindHF, Name: "extra", Repo: "org/repo", File: "extra.gguf"}},
-		"local": {ref: pull.Ref{Kind: pull.KindLocal, Name: "Mine", Path: local}, local: info},
+		"hf":    {ref: pull.Ref{Kind: pull.KindHF, Name: "extra", Repo: "org/repo", File: "extra.gguf"}, release: func() {}},
+		"local": {ref: pull.Ref{Kind: pull.KindLocal, Name: "Mine", Path: local}, local: info, release: func() {}},
 	}
 	for name, p := range plans {
 		var events []api.PullEvent
@@ -663,8 +664,8 @@ func TestPullWritesNothingOutsideTheStore(t *testing.T) {
 	escape := filepath.Join(h.dataDir, "escape.gguf")
 	evil := registry.Entry{Name: "evil", HFRepo: "org/repo", File: "../../../escape.gguf", SHA256: strings.Repeat("a", 64), Size: 8}
 	plans := map[string]plan{
-		"registry": {ref: pull.Ref{Kind: pull.KindRegistry, Name: "evil"}, entry: evil},
-		"hf":       {ref: pull.Ref{Kind: pull.KindHF, Name: "evil", Repo: "org/repo", File: "../../../escape.gguf"}},
+		"registry": {ref: pull.Ref{Kind: pull.KindRegistry, Name: "evil"}, entry: evil, release: func() {}},
+		"hf":       {ref: pull.Ref{Kind: pull.KindHF, Name: "evil", Repo: "org/repo", File: "../../../escape.gguf"}, release: func() {}},
 	}
 	for name, p := range plans {
 		var events []api.PullEvent
@@ -689,7 +690,7 @@ func TestRunPullEndsWithExactlyOneOutcomeEvent(t *testing.T) {
 	s := newServer(h.deps)
 	e, _ := h.cat.Registry.Find("glm-4.7-flash")
 	var events []api.PullEvent
-	err := s.runPull(context.Background(), plan{ref: pull.Ref{Kind: pull.KindRegistry, Name: e.Name}, entry: e}, func(ev api.PullEvent) { events = append(events, ev) })
+	err := s.runPull(context.Background(), plan{ref: pull.Ref{Kind: pull.KindRegistry, Name: e.Name}, entry: e, release: func() {}}, func(ev api.PullEvent) { events = append(events, ev) })
 	if err != nil || events[len(events)-1] != (api.PullEvent{Stage: "done"}) {
 		t.Fatalf("%v %+v", err, events)
 	}
@@ -725,5 +726,62 @@ func TestPullsAndFailuresAreLoggedWithoutTheKey(t *testing.T) {
 	}
 	if strings.Contains(logs, "secret") {
 		t.Fatalf("the api key must never be logged:\n%s", logs)
+	}
+}
+
+// The last event of a pull, done or error, goes out after the pull has given its name back, so the client's next
+// request, such as an rm right after the pull, never meets the pull as still running.
+func TestPullGivesItsNameBackBeforeItsLastEvent(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		h := newHarness(t, "")
+		s := newServer(h.deps)
+		local := filepath.Join(t.TempDir(), "Mine.gguf")
+		if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		ref, err := pull.ParseRef(local)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, refused := s.admit(ref)
+		if refused != nil {
+			t.Fatalf("admit: %+v", refused)
+		}
+		if fail {
+			breakIndex(t, h) // the pull fails when it records the model
+		}
+		held := func() bool {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			_, taken := s.busy["Mine"]
+			return taken
+		}
+		var heldAtTheEnd []bool
+		_ = s.runPull(context.Background(), p, func(e api.PullEvent) {
+			if e.Stage == stageError || (e.Stage == stageDone && e.File == "") {
+				heldAtTheEnd = append(heldAtTheEnd, held())
+			}
+		})
+		if !slices.Equal(heldAtTheEnd, []bool{false}) {
+			t.Fatalf("fail=%v: the name was held at the last event: %v", fail, heldAtTheEnd)
+		}
+	}
+}
+
+// A name given back early is given back once: the release that runs when the request ends never frees the claim of
+// the request that took the name since.
+func TestAClaimIsGivenBackOnce(t *testing.T) {
+	s := newServer(newHarness(t, "").deps)
+	first, refused := s.claim("Mine", opPull)
+	if refused != nil {
+		t.Fatal(refused)
+	}
+	first()
+	if _, refused := s.claim("Mine", opDelete); refused != nil {
+		t.Fatalf("a given-back name can be claimed: %+v", refused)
+	}
+	first()
+	if _, refused := s.claim("Mine", opPull); refused == nil {
+		t.Fatal("the second release of the first claim freed the claim of the delete")
 	}
 }
