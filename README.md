@@ -148,13 +148,21 @@ It downloads the binary for the machine, checks it against the release's `checks
 `/usr/local/bin` (with sudo when the directory needs it), and installs the service: as you on macOS, as root on Linux.
 Its variables go after the pipe: `curl -fsSL https://engine.tara.vision/install.sh | TARAENGINE_VERSION=v0.3.0 bash`
 installs that release (v0.3.0 or later), `INSTALL_DIR=<dir>` another directory (on Linux one outside `/home`, which the
-service cannot reach), and `TARAENGINE_NO_SERVICE=1` the binary alone. Running it again updates taraengine.
+service cannot reach), and `TARAENGINE_NO_SERVICE=1` the binary alone. On Linux it also installs the OpenMP library that
+llama.cpp needs (`libgomp1`, or `libgomp`) with the system's package manager when the machine lacks it. Running it again
+updates taraengine.
 
-**Packages:** the release has a `.deb` and an `.rpm` for amd64 and arm64.
+**Packages:** the release has a `.deb` and an `.rpm` for amd64 and arm64, which depend on the OpenMP library that
+llama.cpp needs. On Debian and Ubuntu:
 
 ```sh
-sudo dpkg -i taraengine_<version>_linux_amd64.deb
-sudo rpm -i taraengine_<version>_linux_amd64.rpm
+sudo apt install ./taraengine_<version>_linux_amd64.deb
+```
+
+On Fedora and RHEL:
+
+```sh
+sudo dnf install ./taraengine_<version>_linux_amd64.rpm
 ```
 
 A package installs the binary as `/usr/bin/taraengine`, LICENSE and NOTICE under `/usr/share/doc/taraengine/`, and the
@@ -168,21 +176,21 @@ cosign signature of it as a Sigstore bundle (`checksums.txt.sigstore.json`) and 
 
 ```sh
 BASE=https://github.com/tara-vision/taraengine/releases/latest/download
-BIN=taraengine-darwin-arm64     # or taraengine-linux-amd64, or taraengine-linux-arm64
-curl -fsSLO $BASE/$BIN -O $BASE/checksums.txt -O $BASE/checksums.txt.sigstore.json
-cosign verify-blob --bundle checksums.txt.sigstore.json \
-  --certificate-identity-regexp 'https://github.com/tara-vision/taraengine/.github/workflows/release.yml@refs/tags/v.*' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
-sha256sum --ignore-missing -c checksums.txt     # on macOS: shasum -a 256 --ignore-missing -c checksums.txt
-chmod +x $BIN
-sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
-taraengine service install                      # on Linux: sudo /usr/local/bin/taraengine service install
+BIN=taraengine-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+curl -fsSL --fail-early -O $BASE/$BIN -O $BASE/checksums.txt -O $BASE/checksums.txt.sigstore.json && \
+  cosign verify-blob --bundle checksums.txt.sigstore.json \
+    --certificate-identity-regexp 'https://github.com/tara-vision/taraengine/.github/workflows/release.yml@refs/tags/v.*' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt && \
+  grep " $BIN\$" checksums.txt > $BIN.sha256 && sha256sum -c $BIN.sha256 && \
+  chmod +x $BIN && sudo mkdir -p /usr/local/bin && sudo mv $BIN /usr/local/bin/taraengine
 ```
 
-`taraengine version` prints the version you installed. The signature covers `checksums.txt`, and the checksums cover
-every binary and package of the release, so verifying the one verifies the rest. The provenance can be checked with
-[slsa-verifier](https://github.com/slsa-framework/slsa-verifier). The macOS binary is signed and notarized, so macOS
-runs it also when a browser downloaded it.
+The steps form one chain, so a download, a signature or a checksum that fails stops it before anything is installed.
+Then install the service: `taraengine service install` on macOS, `sudo /usr/local/bin/taraengine service install` on
+Linux. `taraengine version` prints the version you installed. The signature covers `checksums.txt`, and the checksums
+cover every binary and package of the release, so verifying the one verifies the rest. The provenance can be checked
+with [slsa-verifier](https://github.com/slsa-framework/slsa-verifier). The macOS binary is signed and notarized, so
+macOS runs it also when a browser downloaded it.
 
 **Updates:** `taraengine update` brings taraengine to the latest release the way it came: through Homebrew for the
 cask, the new package for a `.deb` or an `.rpm` (run it with sudo), or the binary in place (with sudo when its
@@ -368,8 +376,9 @@ taraengine load gemma4:12b                  # loads it, and waits until it is re
 taraengine load gemma4:12b --context 16384  # loads it at another window, which the daemon remembers for the model
 taraengine ps                               # what is loaded, and what it holds in memory
 taraengine unload gemma4:12b
-taraengine rm gemma4:12b                    # deletes the model and its projector and draft file from disk
 ```
+
+`taraengine rm <model>` deletes a pulled model and its projector and draft file from disk.
 
 ```
 $ taraengine load gemma4:12b
