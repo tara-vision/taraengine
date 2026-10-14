@@ -18,6 +18,7 @@ import (
 type fakeLaunchctl struct {
 	loaded, disabled, running bool
 	lastExit                  string // what print says after "last exit code ="
+	program                   string // what print says after "program =", left out when empty
 	fail                      map[string]bool
 	calls                     []string
 	// slowExit makes the next bootout answer as launchctl does while the job is still exiting: 36, "Operation now in
@@ -69,8 +70,12 @@ func (f *fakeLaunchctl) print(args []string) (string, error) {
 	if f.running {
 		state, pid = "running", "\tpid = 4242\n"
 	}
-	return fakeTarget + " = {\n\tstate = " + state + "\n" + pid + "\tlast exit code = " + f.lastExit +
-		"\n\tendpoints = {\n\t\tstate = active\n\t}\n}\n", nil
+	program := ""
+	if f.program != "" {
+		program = "\tprogram = " + f.program + "\n"
+	}
+	return fakeTarget + " = {\n" + program + "\tstate = " + state + "\n" + pid + "\tlast exit code = " + f.lastExit +
+		"\n\tendpoints = {\n\t\tstate = active\n\t}\n\tproperties = runatload | inferred program\n}\n", nil
 }
 
 func (f *fakeLaunchctl) printDisabled([]string) (string, error) {
@@ -217,14 +222,35 @@ func TestLaunchdInstallInHomebrewsSandbox(t *testing.T) {
 	// In the sandbox launchctl cannot restart the agent: a kickstart there blocks the upgrade. Homebrew links the new
 	// binary before this step, and the agent's KeepAlive on that path brings it back on the new binary by itself.
 	t.Run("an upgrade leaves the restart to launchd", func(t *testing.T) {
-		fake := &fakeLaunchctl{loaded: true, running: true, fail: map[string]bool{"bootstrap": true}}
+		for name, prewritten := range map[string]bool{"a changed plist": false, "the same plist": true} {
+			fake := &fakeLaunchctl{loaded: true, running: true, program: "/opt/homebrew/bin/taraengine",
+				fail: map[string]bool{"bootstrap": true}}
+			l := newLaunchd(t, fake, true)
+			if prewritten {
+				if _, err := l.writePlist(RenderPlist("/opt/homebrew/bin/taraengine", l.LogPath())); err != nil {
+					t.Fatal(err)
+				}
+			}
+			note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
+			if err != nil || note != "the taraengine service restarts on the new binary" {
+				t.Fatalf("%s: %q %v", name, note, err)
+			}
+			if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label}) {
+				t.Fatalf("%s: only reads, no restart: %v", name, fake.calls)
+			}
+		}
+	})
+	// The loaded agent watches the binary of its loaded definition, so an agent that install.sh loaded from another
+	// directory keeps that binary until the definition is loaded again.
+	t.Run("an agent loaded from another binary says when it moves", func(t *testing.T) {
+		fake := &fakeLaunchctl{loaded: true, running: true, program: "/usr/local/bin/taraengine",
+			fail: map[string]bool{"bootstrap": true}}
 		l := newLaunchd(t, fake, true)
 		note, err := l.Install(context.Background(), "/opt/homebrew/bin/taraengine")
-		if err != nil || note != "the taraengine service restarts on the new binary" {
+		want := "the taraengine service runs /usr/local/bin/taraengine until your next login and " +
+			"/opt/homebrew/bin/taraengine after it; `taraengine service stop` and `taraengine service start` move it now"
+		if err != nil || note != want {
 			t.Fatalf("%q %v", note, err)
-		}
-		if !slices.Equal(fake.calls, []string{"launchctl print-disabled gui/501", "launchctl print gui/501/" + Label}) {
-			t.Fatalf("only reads, no restart: %v", fake.calls)
 		}
 	})
 	t.Run("outside the sandbox a failed load is an error", func(t *testing.T) {
@@ -466,9 +492,11 @@ func TestNewLaunchdTakesTheHomeFromTheUserDatabase(t *testing.T) {
 	if l.Home != "/Users/someone" || !l.Sandboxed || l.UID != 501 {
 		t.Fatalf("the home is the user's, not $HOME, and the difference marks a sandbox: %+v", l)
 	}
-	t.Setenv("HOME", "/Users/someone")
-	if l, _ := NewLaunchd(ExecRunner); l.Sandboxed {
-		t.Fatal("a HOME that is the user's home is no sandbox")
+	for _, home := range []string{"/Users/someone", "/Users/someone/", "/Users//someone"} {
+		t.Setenv("HOME", home)
+		if l, _ := NewLaunchd(ExecRunner); l.Sandboxed {
+			t.Fatalf("a HOME that is the user's home is no sandbox: %q", home)
+		}
 	}
 }
 

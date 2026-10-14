@@ -17,8 +17,8 @@ cask "taraengine" do
 
   binary "taraengine-darwin-arm64", target: "taraengine"
 
-  # Inside Homebrew's sandbox launchctl can neither load nor restart the agent: a first install starts it at the next
-  # login or with the first taraengine command, and on an upgrade launchd brings it back on the new binary by itself.
+  # Inside Homebrew's sandbox launchd refuses to load the agent, and a kickstart there can block: a first install starts
+  # it at the next login or with the first taraengine command, and on an upgrade launchd brings it back by itself.
   postflight_steps do
     run "{{HOMEBREW_PREFIX}}/bin/taraengine",
         args:           ["service", "install", "--binary", "{{HOMEBREW_PREFIX}}/bin/taraengine"],
