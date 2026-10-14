@@ -134,9 +134,10 @@ prints what it is doing. `taraengine <command> --help` lists the flags.
 brew install --cask tara-vision/taracode/taraengine
 ```
 
-The cask installs the binary, signed by Tara Vision, LLC and notarized by Apple, and the service. `brew upgrade` moves
-both to a new release and restarts the engine; `brew uninstall --cask taraengine` stops the service and removes it,
-and `--zap` removes the models, the configuration and the logs as well.
+The cask installs the binary, signed by Tara Vision, LLC and notarized by Apple, and the service, which starts with the
+first command that needs the engine and at every login. `brew upgrade` moves both to a new release and restarts the
+engine; `brew uninstall --cask taraengine` stops the service and removes it, and `--zap` removes the models, the
+configuration and the logs as well.
 
 **Linux, or a Mac without Homebrew:** the installer script.
 
@@ -147,10 +148,10 @@ curl -fsSL https://engine.tara.vision/install.sh | bash
 It downloads the binary for the machine, checks it against the release's `checksums.txt`, installs it to
 `/usr/local/bin` (with sudo when the directory needs it), and installs the service: as you on macOS, as root on Linux.
 Its variables go after the pipe: `curl -fsSL https://engine.tara.vision/install.sh | TARAENGINE_VERSION=v0.3.0 bash`
-installs that release (v0.3.0 or later), `INSTALL_DIR=<dir>` another directory (on Linux one outside `/home`, which the
-service cannot reach), and `TARAENGINE_NO_SERVICE=1` the binary alone. On Linux it also installs the OpenMP library that
-llama.cpp needs (`libgomp1`, or `libgomp`) with the system's package manager when the machine lacks it. Running it again
-updates taraengine.
+installs that release (v0.3.0 or later), `INSTALL_DIR=<dir>` another directory (on Linux one outside `/home`, `/root`,
+`/run/user`, `/tmp` and `/var/tmp`, which the service cannot reach), and `TARAENGINE_NO_SERVICE=1` the binary alone. On
+Linux it also installs the OpenMP library that llama.cpp needs (`libgomp1`, or `libgomp`) with the system's package
+manager when the machine lacks it. Running it again updates taraengine.
 
 **Packages:** the release has a `.deb` and an `.rpm` for amd64 and arm64, which depend on the OpenMP library that
 llama.cpp needs. On Debian and Ubuntu:
@@ -185,17 +186,18 @@ curl -fsSL --fail-early -O $BASE/$BIN -O $BASE/checksums.txt -O $BASE/checksums.
   sudo mkdir -p /usr/local/bin && sudo install -m 0755 $BIN /usr/local/bin/taraengine
 ```
 
-The steps form one chain, so a download, a signature or a checksum that fails stops it before anything is installed.
-Then install the service: `taraengine service install` on macOS, `sudo /usr/local/bin/taraengine service install` on
-Linux. `taraengine version` prints the version you installed. The signature covers `checksums.txt`, and the checksums
-cover every binary and package of the release, so verifying the one verifies the rest. The provenance can be checked
-with [slsa-verifier](https://github.com/slsa-framework/slsa-verifier). The macOS binary is signed and notarized, so
-macOS runs it also when a browser downloaded it.
+The steps form one chain, so a download, a signature or a checksum that fails stops it before anything is installed. On
+a Mac without `sha256sum`, use `shasum -a 256 -c $BIN.sha256` in its place. Then install the service:
+`taraengine service install` on macOS, `sudo /usr/local/bin/taraengine service install` on Linux. `taraengine version`
+prints the version you installed. The signature covers `checksums.txt`, and the checksums cover every binary and package
+of the release, so verifying the one verifies the rest. The provenance can be checked with
+[slsa-verifier](https://github.com/slsa-framework/slsa-verifier). The macOS binary is signed and notarized, so macOS
+runs it also when a browser downloaded it.
 
-**Updates:** `taraengine update` brings taraengine to the latest release the way it came: through Homebrew for the
-cask, the new package for a `.deb` or an `.rpm` (run it with sudo), or the binary in place (with sudo when its
-directory needs it), and then it restarts the service. `taraengine update --check` only says whether a newer release
-is out. It looks the release up only when you run it.
+**Updates:** `taraengine update` brings taraengine to the latest release the way it came: through Homebrew for the cask,
+the new package for a `.deb` or an `.rpm` (run it with sudo), or the binary in place (with sudo when its directory needs
+it: `sudo /usr/local/bin/taraengine update`), and then it restarts the service. `taraengine update --check` only says
+whether a newer release is out. It looks the release up only when you run it.
 
 To build from source, clone the repository and run `make build`; [Development](#development) lists the other
 targets.
@@ -206,26 +208,27 @@ targets.
 script and the packages run it for you. The service runs `taraengine serve --service`, which fetches the pinned
 runtime when it is missing and keeps its stderr to warnings.
 
-|               | macOS                                                 | Linux                                                                    |
-|---------------|-------------------------------------------------------|--------------------------------------------------------------------------|
-| What          | a LaunchAgent of your user, `vision.tara.taraengine`  | a systemd system service, `taraengine.service`, run as user `taraengine` |
-| Starts        | at login                                              | at boot                                                                  |
-| Definition    | `~/Library/LaunchAgents/vision.tara.taraengine.plist` | `/etc/systemd/system/taraengine.service`                                 |
-| Configuration | `~/.config/taraengine/config.yaml`                    | `/etc/taraengine/config.yaml`, written once and then left alone          |
-| Data          | `~/Library/Application Support/taraengine`            | `/var/lib/taraengine`                                                    |
-| Logs          | `~/Library/Logs/taraengine/service.log`, the data log | `journalctl -u taraengine`, `/var/lib/taraengine/logs/taraengine.log`    |
-| Changed       | as your user                                          | with sudo                                                                |
+|               | macOS                                                                      | Linux                                                                    |
+|---------------|----------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| What          | a LaunchAgent of your user, `vision.tara.taraengine`                       | a systemd system service, `taraengine.service`, run as user `taraengine` |
+| Starts        | at login                                                                   | at boot                                                                  |
+| Definition    | `~/Library/LaunchAgents/vision.tara.taraengine.plist`                      | `/etc/systemd/system/taraengine.service`                                 |
+| Configuration | `~/.config/taraengine/config.yaml`                                         | `/etc/taraengine/config.yaml`, written once and then left alone          |
+| Data          | `~/Library/Application Support/taraengine`                                 | `/var/lib/taraengine`                                                    |
+| Logs          | `~/Library/Logs/taraengine/service.log`, `logs/taraengine.log` of the data | `journalctl -u taraengine`, `/var/lib/taraengine/logs/taraengine.log`    |
+| Changed       | as your user                                                               | with sudo                                                                |
 
 `service stop` stops the service until `service start`, across logins and reboots, and an install or an upgrade keeps a
 stopped service stopped. `service restart` restarts it, or starts a stopped one, which then runs at login or boot again;
 `service status` shows it and the engine it runs, and ends with 3 when it does not run; `service uninstall` stops it and
 removes the definition, while the models and the configuration stay. On Linux, a normal user's commands reach the system
 service at the default address; when the configuration sets an `api_key`, set `TARAENGINE_API_KEY`. The unit makes
-`/usr`, `/boot`, `/efi` and `/etc` read-only for the engine and hides `/home`, `/root` and `/run/user`, so the binary
-and `data_dir` belong outside them; an admin who needs `/home` lifts `ProtectHome` with a drop-in
-(`sudo systemctl edit taraengine`). The service imports a local GGUF file as the user `taraengine`, so the file has to
-be outside `/home`, such as under `/srv/models`, and readable by that user. Without systemd, as in a container, run
-`taraengine serve` under the supervisor you have.
+`/usr`, `/boot`, `/efi` and `/etc` read-only for the engine, hides `/home`, `/root` and `/run/user`, and gives it a
+`/tmp` and a `/var/tmp` of its own, so the binary and `data_dir` belong outside those five; an admin who needs `/home`
+for data or models lifts `ProtectHome` with a drop-in (`sudo systemctl edit taraengine`), and the binary stays outside
+it all the same. The service imports a local GGUF file as the user `taraengine`, so the file has to be outside them too,
+such as under `/srv/models`, and readable by that user. Without systemd, as in a container, run `taraengine serve` under
+the supervisor you have.
 
 ## Runtime
 
@@ -418,7 +421,8 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 | `/v1/*` | llama-server's OpenAI and Anthropic API, proxied. | 400, 401, 403, 404, 405, 409, 503 |
 
 While the daemon starts, `GET` and `HEAD /api/health` and `GET /api/version` answer, and every other request that passes
-the host, origin and key checks answers 503 with `Retry-After: 5` and the error `taraengine is starting: <detail>`.
+the host, origin, key and JSON checks answers 503 with `Retry-After: 5` and the error
+`taraengine is starting: <detail>`.
 
 ```sh
 curl http://127.0.0.1:8272/api/loaded
@@ -455,14 +459,14 @@ taraengine needs no configuration file: every key has a default. When there is o
 `$XDG_CONFIG_HOME/taraengine/config.yaml` or `~/.config/taraengine/config.yaml`, on macOS too, and `--config FILE`
 names another, which then has to exist. The Linux system service reads `/etc/taraengine/config.yaml`.
 
-A key that this version does not know is an error that names the key and its
-line and lists the accepted keys, so that a misspelled `api_key` cannot leave an engine open without a word.
-`serve` also takes `--listen`, `--data-dir`, `--runtime-dir` and `--api-key`, which win over the file. The environment
-variables `TARAENGINE_API_KEY` and `TARAENGINE_HF_TOKEN` win over the file as well. The other commands read the same
-file for the data directory. They reach the daemon at `--host`, or, when `--host` is left out, at the `listen` address
-of the file, `http://127.0.0.1:8272` when there is none. The key is `--api-key`, else `TARAENGINE_API_KEY`, and either
-goes with any address. The `api_key` of the file goes only with the address of the file: it belongs to the daemon that
-the file configures, so with `--host` it is not used, and a daemon that asks for a key then needs `--api-key` or
+A key that this version does not know is an error that names the key and its line and lists the accepted keys, so that a
+misspelled `api_key` cannot leave an engine open without a word. `serve` also takes `--listen`, `--data-dir`,
+`--runtime-dir` and `--api-key`, which win over the file. The environment variables `TARAENGINE_API_KEY` and
+`TARAENGINE_HF_TOKEN` win over the file as well. The other commands read the same file for the data directory. They
+reach the daemon at `--host`, or, when `--host` is left out, at the `listen` address of the file,
+`http://127.0.0.1:8272` when there is none. The key is `--api-key`, else `TARAENGINE_API_KEY`, and either goes with any
+address. The `api_key` of the file goes only with the address of the file: it belongs to the daemon that the file
+configures, so with `--host` it is not used, and a daemon that asks for a key then needs `--api-key` or
 `TARAENGINE_API_KEY`.
 
 Keep the key in the configuration file (with a mode that only you can read) or in the environment. Do not put it in
@@ -516,9 +520,11 @@ logs/               taraengine.log and llama-server.log, rotated at 20 MB with t
 you run `taraengine update`. It connects only when something needs it: to `huggingface.co` on `taraengine pull`; to
 `github.com` on `taraengine runtime install`, `runtime update` and `taraengine update`, and when the service starts
 without a verified copy of the build it pins, as on the first start after an install or after an upgrade that pins a new
-build; and to `engine.tara.vision` when `taraengine update` cannot get the latest version from GitHub. Hugging Face and
-GitHub redirect downloads to their own content delivery hosts (under `hf.co` and `githubusercontent.com`). Nothing else
-leaves the machine.
+build; and to `api.github.com` and then `engine.tara.vision` when `taraengine update` cannot read the latest version
+from the release page. Hugging Face and GitHub redirect downloads to their own content delivery hosts (under `hf.co` and
+`githubusercontent.com`). The installer script asks the same addresses; on Linux, when libgomp is missing, it has the
+system's package manager fetch it from the system's repositories, as `apt` and `dnf` do for a package's dependencies. A
+cask's update runs Homebrew, which connects as Homebrew does. Nothing else leaves the machine.
 
 A pull is carried out by the daemon, so it is the `serve` process that connects to Hugging Face, during the pull and for
 a short while after it. Under the service, `serve --service` also connects to GitHub while it fetches its runtime. At
@@ -596,8 +602,9 @@ runtime pins coming.
 
 ## Credits
 
-Built on [llama.cpp](https://github.com/ggml-org/llama.cpp) by ggml-org (MIT). `taraengine runtime install` downloads an
-unmodified upstream build, and upstream's LICENSE stays next to it in the data directory. See [NOTICE](NOTICE).
+Built on [llama.cpp](https://github.com/ggml-org/llama.cpp) by ggml-org (MIT). `taraengine runtime install` and the
+service download an unmodified upstream build, and upstream's LICENSE stays next to it in the data directory. See
+[NOTICE](NOTICE).
 
 ## License
 
