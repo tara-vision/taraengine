@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   starting without waiting for it.
 - A llama-server that ends before it answers is reported with the last line it wrote, such as a library that the
   loader could not find.
+- A pull gives its model's name back before its last event, so a command right after it never meets the pull as
+  running.
 - `taraengine service install` on Linux refuses a binary under `/home`, `/root` or `/run/user`, which the unit hides
   from the engine.
 - The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple.

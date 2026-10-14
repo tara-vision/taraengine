@@ -66,6 +66,8 @@ func (s *Server) runPull(ctx context.Context, p plan, emit func(api.PullEvent)) 
 			err = fmt.Errorf("%s is on disk, but the engine backend could not pick it up", p.ref.Name)
 		}
 	}
+	// The name is given back before the last event, so the client's next request never meets this pull as running.
+	p.release()
 	if err != nil {
 		s.deps.Logger.Warn("pull failed", "model", p.ref.Name, "error", err)
 		emit(api.PullEvent{Stage: stageError, Error: err.Error()})

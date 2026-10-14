@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/catalog"
@@ -173,7 +174,8 @@ const (
 
 // claim takes the in-flight slot of a name for op: one pull or delete of a model runs at a time. A pull is also
 // refused while another pull runs under a name with the same router id. The refusal says which one holds the slot.
-// The release frees it.
+// The release frees it, once: a pull gives its name back before its last event, and the release that runs when the
+// request ends then does nothing.
 func (s *Server) claim(name, op string) (func(), *refusal) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,7 +186,7 @@ func (s *Server) claim(name, op string) (func(), *refusal) {
 		return nil, sharedID(name, other, " (a pull of it is running)")
 	}
 	s.busy[name] = op
-	return func() { s.free(name) }, nil
+	return sync.OnceFunc(func() { s.free(name) }), nil
 }
 
 // pullSharingID is the name of a pull in flight, other than name itself, that has the router id of name. The
