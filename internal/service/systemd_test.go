@@ -510,18 +510,52 @@ func TestSystemdReportsADirectoryItCannotWriteIn(t *testing.T) {
 	})
 }
 
-// The unit hides /home, /root and /run/user from the engine, so a binary there could never start: Install refuses it
-// before it changes anything.
+// The unit hides /home, /root and /run/user (ProtectHome) and /tmp and /var/tmp (PrivateTmp) from the engine, so a
+// binary there, or a link to one, could never start: Install refuses it before it changes anything.
 func TestSystemdInstallRefusesABinaryTheUnitHides(t *testing.T) {
-	for _, binary := range []string{"/home/someone/.local/bin/taraengine", "/root/bin/taraengine", "/run/user/1000/taraengine"} {
+	link := filepath.Join(t.TempDir(), "taraengine")
+	if err := os.Symlink("/home/someone/.local/bin/taraengine", link); err != nil {
+		t.Fatal(err)
+	}
+	for _, binary := range []string{"/home/someone/.local/bin/taraengine", "/root/bin/taraengine", "/run/user/1000/taraengine",
+		"/tmp/taraengine", "/var/tmp/bin/taraengine", link} {
 		fake := newFakeSystem()
 		s := newSystemd(t, fake)
 		_, err := s.Install(context.Background(), binary)
-		if err == nil || !strings.Contains(err.Error(), "the service could not run "+binary+": its unit hides /home, /root and /run/user") {
+		if err == nil || !strings.Contains(err.Error(), "the service could not run "+binary+": its unit hides /home, /root, /run/user, /tmp and /var/tmp") {
 			t.Fatalf("%s: %v", binary, err)
 		}
 		if len(fake.calls) != 0 || exists(s.unitPath()) {
 			t.Fatalf("%s: nothing is changed, got %v", binary, fake.calls)
+		}
+	}
+}
+
+// Without systemd there is no unit to hide anything, and Install says so for any binary, as it does in a container.
+func TestSystemdInstallWithoutSystemdTakesAnyBinary(t *testing.T) {
+	s := newSystemd(t, newFakeSystem())
+	if err := os.RemoveAll(s.path("run/systemd/system")); err != nil {
+		t.Fatal(err)
+	}
+	if note, err := s.Install(context.Background(), "/root/go/bin/taraengine"); err != nil || note != noteNoSystemd {
+		t.Fatalf("%q %v", note, err)
+	}
+}
+
+func TestLinkTargetFollowsLinksToWhereTheyEnd(t *testing.T) {
+	dir := t.TempDir()
+	relative, absolute, loop := filepath.Join(dir, "relative"), filepath.Join(dir, "absolute"), filepath.Join(dir, "loop")
+	for link, target := range map[string]string{relative: "absolute", absolute: "/home/someone/taraengine", loop: "loop"} {
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, want := range map[string]string{
+		relative: "/home/someone/taraengine", absolute: "/home/someone/taraengine", loop: loop,
+		"/usr/local/bin/no-such-file": "/usr/local/bin/no-such-file",
+	} {
+		if got := linkTarget(path); got != want {
+			t.Errorf("linkTarget(%s) = %s, want %s", path, got, want)
 		}
 	}
 }
