@@ -13,6 +13,7 @@ import (
 	"github.com/tara-vision/taraengine/internal/machine"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/internal/runtime"
+	apitypes "github.com/tara-vision/taraengine/pkg/api"
 	"github.com/tara-vision/taraengine/pkg/client"
 )
 
@@ -44,9 +45,12 @@ func newDoctorCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reportRuntime(p, lock, cfg.RuntimeDir, dir)
+			daemon := flags.withEnvironment().withConfig(cfg)
+			if !reportDaemonRuntime(ctx, p, daemon) {
+				reportRuntime(p, lock, cfg.RuntimeDir, dir)
+			}
 			reg := reportRegistry(p, lock, dir)
-			reportDaemon(ctx, p, flags.withEnvironment().withConfig(cfg), info.Tier, reg)
+			reportDaemon(ctx, p, daemon, info.Tier, reg)
 			if err := ctx.Err(); err != nil {
 				return err // interrupted: what the calls that were cut off reported means nothing
 			}
@@ -67,6 +71,27 @@ func reportMachine(p *printer, info machine.Info) {
 		p.printf(" (%s)", gib(info.GPUMemoryBytes))
 	}
 	p.printf(", %s RAM, tier %s\n", gib(info.RAMBytes), info.Tier)
+}
+
+// reportDaemonRuntime prints the runtime as the daemon at the host of f sees it, and reports whether a daemon told:
+// the runtime a daemon runs is the one that counts, and under a system service it is not in this user's data
+// directory. A daemon that is starting says what it is doing with its runtime.
+func reportDaemonRuntime(ctx context.Context, p *printer, f *globalFlags) bool {
+	c := f.client()
+	if doc, err := c.Doctor(ctx); err == nil {
+		rt := doc.Runtime
+		if rt.Verified {
+			p.printf("Runtime: %s verified in %s (as the engine at %s sees it)\n", rt.Build, rt.Dir, f.host)
+		} else {
+			p.printf("Runtime: %s (as the engine at %s sees it)\n", strings.TrimSpace(rt.Build+" "+rt.Error), f.host)
+		}
+		return true
+	}
+	if h, err := c.Health(ctx); err == nil && h.Status == apitypes.HealthStarting {
+		p.printf("Runtime: %s (the engine at %s is starting)\n", h.Detail, f.host)
+		return true
+	}
+	return false
 }
 
 // reportRuntime describes the runtime the daemon would run on: the configured runtime_dir, or the pinned build under
@@ -116,7 +141,15 @@ func reportDaemon(ctx context.Context, p *printer, flags *globalFlags, tier stri
 		p.printf("Daemon: at %s, but it did not answer as expected: %v\n", flags.host, flags.explain(err))
 		return
 	}
-	p.printf("Daemon: taraengine %s on %s, runtime %s, at %s\n", v.Version, v.Platform, v.Runtime.Build, flags.host)
+	p.printf("Daemon: taraengine %s on %s, runtime %s, at %s", v.Version, v.Platform, v.Runtime.Build, flags.host)
+	if h, err := c.Health(ctx); err == nil && h.Status == apitypes.HealthStarting {
+		p.printf(": starting: %s\n", h.Detail)
+		if e, ok := recommendedFor(reg, tier); ok {
+			p.printf("Recommended for this tier: %s\n", e.Name)
+		}
+		return
+	}
+	p.printf("\n")
 	if loaded, err := c.Loaded(ctx); err == nil {
 		for _, m := range loaded {
 			p.printf("Loaded: %s at %d tokens%s\n", m.Name, m.Context, sleepingNote(m.Status))
