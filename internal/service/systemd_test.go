@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -73,6 +74,11 @@ func (f *fakeSystem) systemctl(args []string) (string, error) {
 		f.enabled, f.active = "disabled", false
 	case "restart " + UnitName:
 		f.active = true
+	case "is-active " + UnitName:
+		if !f.active {
+			return "inactive\n", errors.New("exit status 3")
+		}
+		return "active\n", nil
 	case "show " + UnitName + " -p LoadState,ActiveState,MainPID,ExecMainStatus":
 		load, active, pid := "not-found", "inactive", "0"
 		if f.enabled != "" {
@@ -101,6 +107,75 @@ func newSystemd(t *testing.T, fake *fakeSystem) *Systemd {
 		t.Fatal(err)
 	}
 	return &Systemd{Run: fake.run, Root: root, EUID: 0}
+}
+
+func TestSystemdInstallSetsItsModesWhateverTheUmask(t *testing.T) {
+	previous := syscall.Umask(0o077) // a hardened shell's umask, which sudo keeps
+	t.Cleanup(func() { syscall.Umask(previous) })
+	s := newSystemd(t, newFakeSystem())
+	if _, err := s.Install(context.Background(), "/usr/local/bin/taraengine"); err != nil {
+		t.Fatal(err)
+	}
+	for rel, want := range map[string]os.FileMode{"etc/taraengine": 0o750, "var/lib/taraengine": 0o750, "etc/taraengine/config.yaml": 0o640} {
+		info, err := os.Stat(s.path(rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != want {
+			t.Fatalf("%s is %o, want %o: the service user has to read it", rel, info.Mode().Perm(), want)
+		}
+	}
+}
+
+func TestSystemdInstallLeavesTheModesOfDirectoriesThatAreThere(t *testing.T) {
+	s := newSystemd(t, newFakeSystem())
+	dir := s.path("etc/taraengine")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil { //nolint:gosec // G302: an admin's choice, which Install keeps
+		t.Fatal(err)
+	}
+	if _, err := s.Install(context.Background(), "/usr/local/bin/taraengine"); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o755 {
+		t.Fatalf("an admin's directory keeps its mode: %v %v", info.Mode(), err)
+	}
+}
+
+func TestSystemdRestartOfAStoppedServiceStartsItAtBootAgain(t *testing.T) {
+	fake := newFakeSystem()
+	s := newSystemd(t, fake)
+	ctx := context.Background()
+	if _, err := s.Install(ctx, "/usr/local/bin/taraengine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Restart(ctx); err != nil || fake.enabled != "enabled" || !fake.active {
+		t.Fatalf("a restart of a stopped service starts it and keeps it at boot, as on macOS: %v %v", err, fake.calls)
+	}
+	fake.calls = nil
+	if err := s.Restart(ctx); err != nil || !slices.Contains(fake.calls, "systemctl restart "+UnitName) ||
+		slices.Contains(fake.calls, "systemctl enable --now "+UnitName) {
+		t.Fatalf("a restart of a running service restarts it: %v %v", err, fake.calls)
+	}
+}
+
+func TestSystemdUpgradeMovesARunningButDisabledServiceToTheNewBinary(t *testing.T) {
+	fake := newFakeSystem()
+	s := newSystemd(t, fake)
+	ctx := context.Background()
+	if _, err := s.Install(ctx, "/usr/local/bin/taraengine"); err != nil {
+		t.Fatal(err)
+	}
+	fake.enabled, fake.calls = "disabled", nil // an admin's systemctl disable, without --now
+	note, err := s.Install(ctx, "/usr/bin/taraengine")
+	if err != nil || note != noteRestarted || !slices.Contains(fake.calls, "systemctl restart "+UnitName) || fake.enabled != "disabled" {
+		t.Fatalf("a disabled service that runs moves to the new binary and stays disabled: %q %v %v", note, err, fake.calls)
+	}
 }
 
 func TestSystemdInstallSetsUpTheUserTheDirectoriesAndTheUnit(t *testing.T) {
@@ -283,7 +358,7 @@ func TestSystemdStartStopRestartUninstall(t *testing.T) {
 		t.Fatalf("start enables: %v %v", err, fake.calls)
 	}
 	fake.calls = nil
-	if err := s.Restart(ctx); err != nil || !slices.Equal(fake.calls, []string{"systemctl restart " + UnitName}) {
+	if err := s.Restart(ctx); err != nil || !slices.Equal(fake.calls, []string{"systemctl is-active " + UnitName, "systemctl restart " + UnitName}) {
 		t.Fatalf("restart: %v %v", err, fake.calls)
 	}
 	note, err := s.Uninstall(ctx)

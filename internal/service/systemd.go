@@ -68,8 +68,8 @@ func (s *Systemd) systemctl(ctx context.Context, args ...string) error {
 
 // Install sets up the taraengine user, its directories and, when there is none, its configuration, writes the unit
 // for binary and runs it: a first install, and an upgrade of a service that is enabled, enable and restart it. A
-// service an admin disabled stays disabled. On a system without systemd it says so and succeeds, so that a package
-// installs in a container.
+// service an admin disabled stays disabled, and moves to the new binary when it still runs. On a system without
+// systemd it says so and succeeds, so that a package installs in a container.
 func (s *Systemd) Install(ctx context.Context, binary string) (string, error) {
 	if s.EUID != 0 {
 		return "", ErrNeedsRoot
@@ -95,7 +95,10 @@ func (s *Systemd) Install(ctx context.Context, binary string) (string, error) {
 		return "", err
 	}
 	if existed && !s.enabled(ctx) {
-		return noteStopped, nil
+		if !s.active(ctx) {
+			return noteStopped, nil
+		}
+		return noteRestarted, s.systemctl(ctx, "restart", UnitName)
 	}
 	if err := s.systemctl(ctx, "enable", UnitName); err != nil {
 		return "", err
@@ -151,15 +154,26 @@ func (s *Systemd) ensureDirs(ctx context.Context) error {
 	if exists(config) {
 		return nil
 	}
-	if err := os.WriteFile(config, LinuxConfig(), 0o640); err != nil { //nolint:gosec // G306: the service user reads it
+	err := os.WriteFile(config, LinuxConfig(), 0o640) //nolint:gosec // G306: the service user reads it
+	if err == nil {
+		err = os.Chmod(config, 0o640) //nolint:gosec // G302: the service user reads it, whatever the umask
+	}
+	if err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
 	return s.run(ctx, "chown", "root:"+serviceUser, config)
 }
 
+// mkdirOwned creates a directory with its owner. One it creates gets 0750 whatever the umask, so that the service user
+// can read it; one that is there keeps the mode an admin gave it.
 func (s *Systemd) mkdirOwned(ctx context.Context, rel, owner string) error {
 	dir := s.path(rel)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	created := !exists(dir)
+	err := os.MkdirAll(dir, 0o750)
+	if err == nil && created {
+		err = os.Chmod(dir, 0o750) //nolint:gosec // G302: the service user reads it, whatever the umask
+	}
+	if err != nil {
 		return fmt.Errorf("service: %w", err)
 	}
 	return s.run(ctx, "chown", owner, dir)
@@ -169,6 +183,12 @@ func (s *Systemd) mkdirOwned(ctx context.Context, rel, owner string) error {
 func (s *Systemd) enabled(ctx context.Context) bool {
 	out, _ := s.Run(ctx, "systemctl", "is-enabled", UnitName)
 	return strings.TrimSpace(out) == "enabled"
+}
+
+// active reports whether the service runs. is-active exits with 3 for anything but active.
+func (s *Systemd) active(ctx context.Context) bool {
+	_, err := s.Run(ctx, "systemctl", "is-active", UnitName)
+	return err == nil
 }
 
 // Start enables the service and starts it.
@@ -187,10 +207,14 @@ func (s *Systemd) Stop(ctx context.Context) error {
 	return s.systemctl(ctx, "disable", "--now", UnitName)
 }
 
-// Restart restarts the service, and starts it when it does not run.
+// Restart restarts the service when it runs, and otherwise starts it as a start does, so that it runs at boot again,
+// as a restart of a stopped agent does on macOS.
 func (s *Systemd) Restart(ctx context.Context) error {
 	if err := s.installed(); err != nil {
 		return err
+	}
+	if !s.active(ctx) {
+		return s.systemctl(ctx, "enable", "--now", UnitName)
 	}
 	return s.systemctl(ctx, "restart", UnitName)
 }
