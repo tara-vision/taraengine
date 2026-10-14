@@ -1,0 +1,2 @@
+# taraengine system service configuration. The README's Configuration section lists every key.
+data_dir: /var/lib/taraengine
