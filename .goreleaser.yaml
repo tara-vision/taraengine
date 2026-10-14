@@ -36,6 +36,26 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+  # install.sh is signed with everything else, so engine.tara.vision serves a script the release vouches for.
+  extra_files:
+    - glob: ./install.sh
+
+# The macOS binary is signed with the Developer ID of Tara Vision, LLC and notarized by Apple from this Linux runner,
+# before the checksums are made, so checksums.txt, its cosign bundle and the provenance cover the signed binary. The
+# release waits for Apple's verdict and fails on a rejection. Without the secrets (a snapshot, CI's check) it is off.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [taraengine]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        wait: true
+        timeout: 20m
 
 signs:
   # cosign 3.x writes a Sigstore bundle (signature + certificate + log entry in one file).
@@ -68,11 +88,18 @@ nfpms:
         dst: /usr/share/doc/taraengine/LICENSE
       - src: NOTICE
         dst: /usr/share/doc/taraengine/NOTICE
+    # The binary writes the unit itself (taraengine service install), so a package ships no unit of its own.
+    scripts:
+      postinstall: packaging/postinstall.sh
+      preremove: packaging/preremove.sh
+      postremove: packaging/postremove.sh
 
 release:
   github:
     owner: tara-vision
     name: taraengine
+  extra_files:
+    - glob: ./install.sh
   draft: false
   prerelease: auto
   mode: replace
