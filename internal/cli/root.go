@@ -1,5 +1,5 @@
 // Package cli is the taraengine command line: serve, pull, list, ps, load, unload, rm, doctor, runtime, service,
-// version.
+// update, version.
 package cli
 
 import (
@@ -34,7 +34,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&flags.config, "config", "", "config file (default: the user config directory)")
 	root.AddCommand(newVersionCommand(), newServeCommand(flags), newPullCommand(flags), newListCommand(flags),
 		newPsCommand(flags), newLoadCommand(flags), newUnloadCommand(flags), newRmCommand(flags),
-		newDoctorCommand(flags), newRuntimeCommand(flags), newServiceCommand(flags))
+		newDoctorCommand(flags), newRuntimeCommand(flags), newServiceCommand(flags), newUpdateCommand())
 	return root
 }
 
