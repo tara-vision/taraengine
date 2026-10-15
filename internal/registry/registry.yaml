@@ -82,6 +82,7 @@ entries:
     context: 262144
     capabilities: [tools, thinking, vision]
     tier: "48"
+    default: true
     mmproj:
       file: mmproj-gemma-4-31B-it-Q8_0.gguf
       sha256: 8872f1dd7ba6a750a039c04b45812511f4ecf004e229420cea58c8049a970fb6
@@ -91,7 +92,7 @@ entries:
       sha256: f8f1b8c89b72da2b7391d6fe29d26dd373efe9624a3d5b3f0e99e62579b12c08
       size: 279956160
     min_runtime: b11514
-    notes: Top of the RTX 5090 board (94 percent), 3.5x slower than the MoE models.
+    notes: The 48 GB default since 0.3.1, five tasks ahead of qwen3.6:35b on the RTX 5090 board; 2.4x slower than qwen3.6:35b there.
   - name: glm-4.7-flash
     family: glm-4.7-flash
     params: 30B-A3B
@@ -167,7 +168,6 @@ entries:
     context: 262144
     capabilities: [tools, thinking, vision]
     tier: "48"
-    default: true
     mmproj:
       file: mmproj-Qwen3.6-35B-A3B-Q8_0.gguf
       sha256: 904cbf8c8e876220066ab3bf676c7efa40f3da372276fdaf8b01d2fb2a37a51d

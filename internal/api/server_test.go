@@ -592,7 +592,7 @@ func TestVersionAndDoctor(t *testing.T) {
 	}
 	_, data = h.do(t, http.MethodGet, "/api/doctor", "", nil)
 	d := decode[api.Doctor](t, data)
-	if d.Machine.GPU != "NVIDIA GeForce RTX 5090" || d.Machine.Tier != "48" || !d.Runtime.Verified || d.Recommendation["48"] != "qwen3.6:35b" || d.Recommendation["16"] != "gemma4:12b" {
+	if d.Machine.GPU != "NVIDIA GeForce RTX 5090" || d.Machine.Tier != "48" || !d.Runtime.Verified || d.Recommendation["48"] != "gemma4:31b" || d.Recommendation["16"] != "gemma4:12b" {
 		t.Fatalf("doctor: %+v", d)
 	}
 }
@@ -621,7 +621,7 @@ func TestDoctorCarriesEveryMachineAndRuntimeField(t *testing.T) {
 	if rt := d.Runtime; !rt.Installed || rt.Verified || rt.Build != "b1" || rt.Dir != "/rt/b1" || rt.Error != "checksum mismatch" {
 		t.Fatalf("runtime: %+v", rt)
 	}
-	for tier, name := range map[string]string{"small": "gemma4:e4b", "16": "gemma4:12b", "32": "glm-4.7-flash", "48": "qwen3.6:35b"} {
+	for tier, name := range map[string]string{"small": "gemma4:e4b", "16": "gemma4:12b", "32": "glm-4.7-flash", "48": "gemma4:31b"} {
 		if d.Recommendation[tier] != name {
 			t.Errorf("recommendation for %s: %q, want %q", tier, d.Recommendation[tier], name)
 		}
@@ -638,7 +638,7 @@ func TestNilProvidersAndLoggerGetDefaults(t *testing.T) {
 	})
 	resp, data := h.do(t, http.MethodGet, "/api/doctor", "", nil)
 	d := decode[api.Doctor](t, data)
-	if resp.StatusCode != 200 || d.Machine != (api.Machine{}) || d.Runtime != (api.RuntimeStatus{}) || d.Recommendation["48"] != "qwen3.6:35b" {
+	if resp.StatusCode != 200 || d.Machine != (api.Machine{}) || d.Runtime != (api.RuntimeStatus{}) || d.Recommendation["48"] != "gemma4:31b" {
 		t.Fatalf("doctor without providers: %d %s", resp.StatusCode, data)
 	}
 	if resp, _ := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: "glm-4.7-flash"}); resp.StatusCode != 200 {

@@ -144,7 +144,7 @@ func TestClientRoundTrips(t *testing.T) {
 	if err := c.Unload(ctx, "glm-4.7-flash"); err != nil {
 		t.Fatalf("unload: %v", err)
 	}
-	if doc, err := c.Doctor(ctx); err != nil || doc.Machine.Tier != "48" || doc.Recommendation["48"] != "qwen3.6:35b" {
+	if doc, err := c.Doctor(ctx); err != nil || doc.Machine.Tier != "48" || doc.Recommendation["48"] != "gemma4:31b" {
 		t.Fatalf("doctor: %+v %v", doc, err)
 	}
 	if err := c.Delete(ctx, "glm-4.7-flash"); err != nil {

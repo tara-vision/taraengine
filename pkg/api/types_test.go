@@ -84,11 +84,11 @@ func TestWireFormat(t *testing.T) {
 					DriverVersion: "570",
 				},
 				Runtime:        RuntimeStatus{Installed: true, Verified: true, Build: "b1", Dir: "/rt", Error: "bad"},
-				Recommendation: map[string]string{"48": "qwen3.6:35b"},
+				Recommendation: map[string]string{"48": "gemma4:31b"},
 			},
 			`{"machine":{"os":"linux","arch":"amd64","gpu":"RTX","gpu_memory_bytes":1,"unified_memory":true,` +
 				`"ram_bytes":2,"tier":"48","driver_version":"570"},"runtime":{"installed":true,"verified":true,` +
-				`"build":"b1","dir":"/rt","error":"bad"},"recommendation":{"48":"qwen3.6:35b"}}`,
+				`"build":"b1","dir":"/rt","error":"bad"},"recommendation":{"48":"gemma4:31b"}}`,
 		},
 		{
 			"Doctor with optional fields empty",

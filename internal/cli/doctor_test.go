@@ -118,7 +118,7 @@ func TestDoctorListsWhatIsLoadedAndRecommendsForThisTier(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Loaded: gemma4:12b at 8192 tokens\n", "Recommended for this tier: qwen3.6:35b\n"} {
+	for _, want := range []string{"Loaded: gemma4:12b at 8192 tokens\n", "Recommended for this tier: gemma4:31b\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}
@@ -291,7 +291,7 @@ func TestDoctorRecommendsForTheTierOfTheDaemonItAsks(t *testing.T) {
 	if !strings.Contains(out, "Machine: linux/amd64, no NVIDIA GPU found, 16.0 GiB RAM, tier 16\n") {
 		t.Fatalf("the machine line is this host's:\n%s", out)
 	}
-	if !strings.Contains(out, "Recommended for this tier: qwen3.6:35b\n") || strings.Contains(out, "gemma4:12b") {
+	if !strings.Contains(out, "Recommended for this tier: gemma4:31b\n") || strings.Contains(out, "gemma4:12b") {
 		t.Fatalf("the recommendation is for the machine the daemon runs on, not the one doctor runs on:\n%s", out)
 	}
 }
