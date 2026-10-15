@@ -309,11 +309,11 @@ model has them. A pull fetches all of them.
 | gemma4:e4b    | small (default) | 4.6 GB  | tools, thinking, vision | q8_0     |
 | gemma4:12b    | 16 (default)    | 7.2 GB  | tools, thinking, vision | f16      |
 | gemma4:26b    | 32              | 14.6 GB | tools, thinking, vision | f16      |
-| gemma4:31b    | 48              | 18.0 GB | tools, thinking, vision | f16      |
+| gemma4:31b    | 48 (default)    | 18.0 GB | tools, thinking, vision | f16      |
 | glm-4.7-flash | 32 (default)    | 18.2 GB | tools, thinking         | q8_0     |
 | qwen3.6:27b   | 32              | 19.1 GB | tools, thinking, vision | q8_0     |
 | qwen3.8:27b   | 32              | 19.0 GB | tools, thinking, vision | q8_0     |
-| qwen3.6:35b   | 48 (default)    | 20.4 GB | tools, thinking, vision | q8_0     |
+| qwen3.6:35b   | 48              | 20.4 GB | tools, thinking, vision | q8_0     |
 
 Size is the main file, as `taraengine list` shows it; the projector and the draft file come on top. KV cache is the
 type of the model's attention cache: q8_0 holds less memory than f16 at the same window, and an entry keeps f16 where

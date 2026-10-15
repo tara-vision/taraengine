@@ -109,6 +109,21 @@ func TestDefaultIsAbsentForAnUnknownTier(t *testing.T) {
 	}
 }
 
+// TestEachTierDefaultsToItsBoardPick: the model the engine recommends for each tier. The 48 GB default is gemma4:31b
+// since 0.3.1: it led qwen3.6:35b on every taracode board since 3.1, by five tasks on the board of 2026-10-15.
+func TestEachTierDefaultsToItsBoardPick(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for tier, want := range map[string]string{"small": "gemma4:e4b", "16": "gemma4:12b", "32": "glm-4.7-flash", "48": "gemma4:31b"} {
+		e, ok := r.Default(tier)
+		if !ok || e.Name != want {
+			t.Errorf("tier %s: default %q (found %v), want %q", tier, e.Name, ok, want)
+		}
+	}
+}
+
 // TestTheCatalogPinsEachModelsKVCache: the models in q8 run a q8_0 KV cache, and the others keep llama-server's f16
 // default.
 func TestTheCatalogPinsEachModelsKVCache(t *testing.T) {

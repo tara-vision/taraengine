@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-15
+
+### Changed
+- The 48 GB tier's default is gemma4:31b: it led qwen3.6:35b on every taracode board since taracode 3.1, by five
+  tasks on the board of 2026-10-15 (30 against 25 of 33 tasks). `doctor` recommends it on a 48 GB machine, and
+  `GET /api/models` and the README's catalog table mark it. qwen3.6:35b stays in the catalog: 2.4x faster on that
+  board and the lighter load there (22.4 GiB against 24.8 GiB at the default window), which counts on a 24 GB card
+  or a host without a GPU, since the tier reads the host's RAM alone.
+
 ## [0.3.0] - 2026-10-14
 
 ### Added
