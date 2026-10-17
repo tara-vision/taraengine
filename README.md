@@ -53,13 +53,13 @@
 
 This release serves the pinned runtime, the catalog with its tuned presets, the control API and the OpenAI-compatible
 passthrough, on Apple Silicon Macs and NVIDIA Linux machines. It installs with one command and runs as a service, which
-fetches the llama.cpp build that its binary pins. taracode's next release runs on it.
+fetches the llama.cpp build that its binary pins. taracode runs on it natively since taracode 3.3.0.
 
 ## Quick Start
 
 ### 1. Install taraengine
 
-On a Mac:
+On an Apple Silicon Mac:
 
 ```sh
 brew install --cask tara-vision/taracode/taraengine
@@ -94,8 +94,8 @@ curl http://127.0.0.1:8272/v1/chat/completions -H 'Content-Type: application/jso
 
 The chat request loads the model on first use. `taraengine doctor` shows the machine, the runtime and the daemon, and
 recommends the catalog's model for the RAM it finds: for the machine of the daemon when one answers, and for this
-machine when none does. taracode's next release finds the engine at this address without configuration, and other
-OpenAI-compatible clients can use it now; a web page from another origin needs `allowed_origins`.
+machine when none does. taracode finds the engine at this address without configuration, and other
+OpenAI-compatible clients can use it too; a web page from another origin needs `allowed_origins`.
 
 ## Commands
 
