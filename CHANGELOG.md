@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The pinned llama.cpp build is b11750 (from b11514): the first pin that can run NVIDIA's Nemotron 3.5 Bolt
+  74B-A9B and its LiLiCorr drafter, both merged upstream on 2026-10-15. The service fetches the new build on its first
+  start and removes b11514; a daemon run by hand needs `taraengine runtime update`.
+
 ## [0.3.1] - 2026-10-15
 
 ### Changed
