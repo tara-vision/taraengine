@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-20
+
 ### Added
 - A catalog entry can carry a DFlash drafter (`dflash`), served with `spec-type = draft-dflash`, beside the
   multi-token-prediction kind (`mtp`); an entry takes one of the two. A projector or a draft can come from a
