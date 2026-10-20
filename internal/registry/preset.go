@@ -55,7 +55,7 @@ func checkPreset(owner string, preset map[string]string) error {
 var presetAliases = map[string]string{
 	"ngl": "n-gpu-layers", "fa": "flash-attn", "ctk": "cache-type-k", "ctv": "cache-type-v",
 	"draft-p-min": "spec-draft-p-min",
-	"ngld": "spec-draft-ngl", "gpu-layers-draft": "spec-draft-ngl", "n-gpu-layers-draft": "spec-draft-ngl",
+	"ngld":        "spec-draft-ngl", "gpu-layers-draft": "spec-draft-ngl", "n-gpu-layers-draft": "spec-draft-ngl",
 }
 
 // CanonicalKey returns a tuning key's long name, so a key and its short name compare equal.
