@@ -1,35 +1,35 @@
 # Pinned upstream llama.cpp build: one build per taraengine release. The sha256 values are those of
 # the GitHub release assets; scripts/pin-runtime.sh <build> internal/runtime/runtime.lock.yaml regenerates this file and CI verifies it.
-build: b11514
+build: b11750
 assets:
   darwin/arm64:
-    asset: llama-b11514-bin-macos-arm64.tar.gz
-    sha256: e16abae5c048b77e0e8608728b162d88295bda6abbe449a8ba85c95fa734ee24
+    asset: llama-b11750-bin-macos-arm64.tar.gz
+    sha256: 39468fedd93462b119b2bc84b2d441ee583a5bcfcf4fc4a59acbcc68854c2fe2
   linux/amd64/cuda13:
-    asset: llama-b11514-bin-ubuntu-cuda-13.4-x64.tar.gz
-    sha256: 4895691b6c7e8cec03788d84b2e5424a26a9694be541e786cb30415b4b2dd801
+    asset: llama-b11750-bin-ubuntu-cuda-13.4-x64.tar.gz
+    sha256: 266149b2408ca91497042ea5add7edc76c07ccc4ed287a186945074e1754b0df
   linux/amd64/cuda12:
-    asset: llama-b11514-bin-ubuntu-cuda-12.8-x64.tar.gz
-    sha256: d99a290f852d060e6b59969c0d7c2fb031eec0afd9e1e23a07f2f6117ff04fca
+    asset: llama-b11750-bin-ubuntu-cuda-12.8-x64.tar.gz
+    sha256: e876cc69e563bacc138d25e7ea85bd3c3e68c3d02bab3e2ebebbbeb524bcde56
   linux/amd64/cpu:
-    asset: llama-b11514-bin-ubuntu-x64.tar.gz
-    sha256: b2b617fb28e9d1444235c30bb09a3704789a1840e16ead58a5f7be6eeae8beef
+    asset: llama-b11750-bin-ubuntu-x64.tar.gz
+    sha256: 152e33221c9c9d37816a8ee9943f8d87339199197c80cb692559c9756b2027d8
   linux/arm64/cuda13:
-    asset: llama-b11514-bin-ubuntu-cuda-13.4-arm64.tar.gz
-    sha256: 636a1226a9923a8118e2e088831582c58a2dd7a7e91cd2fde7d2924104bf97e8
+    asset: llama-b11750-bin-ubuntu-cuda-13.4-arm64.tar.gz
+    sha256: eb0e97bad2e11524d83bb520f54072c91040cf09bf4d8aa96a3a2800922b0f4e
     untested: true
   linux/arm64/cpu:
-    asset: llama-b11514-bin-ubuntu-arm64.tar.gz
-    sha256: 54ad6ca00d11b9fbeea134aa5b13642b8b4f840188d2f6929d08e49cbce16ea9
+    asset: llama-b11750-bin-ubuntu-arm64.tar.gz
+    sha256: 6ca1f9748143dba4bd0b1d6586d587b6eee7feecbbd918b306dc82b6596bcd09
     untested: true
 cudart:
   linux/amd64/cuda13:
-    asset: cudart-llama-b11514-bin-ubuntu-cuda-13.4-x64.tar.gz
-    sha256: dbdc8cea6dc1aa515ad08f7215315dd034b03b97c86ce1527e5514eef7cdec84
+    asset: cudart-llama-b11750-bin-ubuntu-cuda-13.4-x64.tar.gz
+    sha256: 86e3e6e2189d6f55572a26482760410939bfd79308e7d663d90ae3b4bed51bac
   linux/amd64/cuda12:
-    asset: cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64.tar.gz
-    sha256: e90f47c7549bea8e82c67e8a45bf429b5496d801e0692800d00446ca6f5a451a
+    asset: cudart-llama-b11750-bin-ubuntu-cuda-12.8-x64.tar.gz
+    sha256: 953e21dc59f50e3693f1c459da6f1881641dc19d864f2f01f0a8979421071654
   linux/arm64/cuda13:
-    asset: cudart-llama-b11514-bin-ubuntu-cuda-13.4-arm64.tar.gz
-    sha256: a0244688a420f11abef2e4b3276396c94aa5f3fd01a624210f450d161e67aa63
+    asset: cudart-llama-b11750-bin-ubuntu-cuda-13.4-arm64.tar.gz
+    sha256: 2a85e6d1839439d62975175234ddae97daf91f223873eb065fff9f0d449a82cd
     untested: true

@@ -10,7 +10,7 @@ func TestEmbeddedLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if l.Build != "b11514" {
+	if l.Build != "b11750" {
 		t.Fatalf("build %s", l.Build)
 	}
 	for _, key := range []string{"darwin/arm64", "linux/amd64/cuda13", "linux/amd64/cuda12", "linux/amd64/cpu", "linux/arm64/cuda13", "linux/arm64/cpu"} {
@@ -24,7 +24,7 @@ func TestEmbeddedLock(t *testing.T) {
 		}
 	}
 	a := l.Assets["darwin/arm64"]
-	if got := l.URL(a); got != "https://github.com/ggml-org/llama.cpp/releases/download/b11514/llama-b11514-bin-macos-arm64.tar.gz" {
+	if got := l.URL(a); got != "https://github.com/ggml-org/llama.cpp/releases/download/b11750/llama-b11750-bin-macos-arm64.tar.gz" {
 		t.Fatalf("url %s", got)
 	}
 	if _, err := l.Asset(Platform{OS: "windows", Arch: "amd64", Accel: "cpu"}); err == nil {
@@ -44,8 +44,8 @@ func TestParseLockRejects(t *testing.T) {
 		{"bad build", strings.Replace(good, "build: b1", "build: latest", 1), "build"},
 		{"bad sha", strings.Replace(good, strings.Repeat("a", 64), "abc", 1), "sha256"},
 		{"asset of another build", strings.Replace(good, "llama-b1-bin", "llama-b2-bin", 1), "does not belong"},
-		{"build is a prefix of the asset build", strings.Replace(strings.Replace(good, "build: b1", "build: b1151", 1), "llama-b1-bin", "llama-b11514-bin", 1), "does not belong"},
-		{"build b1 against an asset of b11514", strings.Replace(good, "llama-b1-bin", "llama-b11514-bin", 1), "does not belong"},
+		{"build is a prefix of the asset build", strings.Replace(strings.Replace(good, "build: b1", "build: b1175", 1), "llama-b1-bin", "llama-b11750-bin", 1), "does not belong"},
+		{"build b1 against an asset of b11750", strings.Replace(good, "llama-b1-bin", "llama-b11750-bin", 1), "does not belong"},
 		{"asset name with a slash", strings.Replace(good, "llama-b1-bin", "sub/llama-b1-bin", 1), "plain file name"},
 		{"asset name that climbs", strings.Replace(good, "llama-b1-bin", "../llama-b1-bin", 1), "plain file name"},
 		{"asset name with dot dot inside", strings.Replace(good, "llama-b1-bin", "llama-b1-bin..", 1), "plain file name"},

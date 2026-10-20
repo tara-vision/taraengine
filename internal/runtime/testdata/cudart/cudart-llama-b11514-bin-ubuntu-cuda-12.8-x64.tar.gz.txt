@@ -1,4 +1,0 @@
-cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64/
-cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64/libcublas.so.12
-cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64/libcudart.so.12
-cudart-llama-b11514-bin-ubuntu-cuda-12.8-x64/libcublasLt.so.12
