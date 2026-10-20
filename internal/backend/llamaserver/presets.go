@@ -17,6 +17,7 @@ type PresetModel struct {
 	ModelPath  string
 	MMProjPath string
 	DraftPath  string
+	DraftKind  string // "mtp" (the default with a draft path) or "dflash"
 	Context    int
 	Extra      map[string]string // tuning keys only; engine-owned keys win over them
 }
@@ -70,6 +71,9 @@ func (m PresetModel) keys() map[string]string {
 	if m.DraftPath != "" {
 		keys["model-draft"] = m.DraftPath
 		keys["spec-type"] = "draft-mtp"
+		if m.DraftKind == "dflash" {
+			keys["spec-type"] = "draft-dflash"
+		}
 	}
 	return keys
 }

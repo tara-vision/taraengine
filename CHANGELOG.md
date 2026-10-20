@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A catalog entry can carry a DFlash drafter (`dflash`), served with `spec-type = draft-dflash`, beside the
+  multi-token-prediction kind (`mtp`); an entry takes one of the two. A projector or a draft can come from a
+  repository of its own (`hf_repo` on the sibling): it is pulled, listed and removed under that repository, and
+  `pinregistry` pins it there.
+
+### Changed
+- The preset keys `draft-max` and `draft-min`, which llama-server removed, are `spec-draft-n-max` and
+  `spec-draft-n-min`; a catalog that still carries an old one is refused with its new name. `spec-draft-p-min` joins
+  them, with `draft-p-min` kept as the alias it still is, and the drafter's offload is tunable with `spec-draft-ngl`
+  (`ngld`, `gpu-layers-draft` and `n-gpu-layers-draft` are its aliases). No catalog entry used any of them.
+
 ## [0.3.1] - 2026-10-15
 
 ### Changed

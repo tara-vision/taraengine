@@ -41,7 +41,7 @@ func TestParseNamesAnUnknownKeyAndTheAcceptedOnes(t *testing.T) {
 		{
 			"a misspelled sibling key",
 			"entries:\n" + entryYAML("a:1", "a.gguf", "mmproj:", "  file: p.gguf", "  sha: x"),
-			[]string{`unknown key "sha"`, "line 11", "accepted keys: file, sha256, size"},
+			[]string{`unknown key "sha"`, "line 11", "accepted keys: file, sha256, size, hf_repo"},
 		},
 	}
 	for _, tc := range cases {
@@ -116,6 +116,68 @@ func TestEmbeddedCatalogUsesOnlyTuningKeys(t *testing.T) {
 			if !tuningKeys[key] {
 				t.Errorf("%s: preset key %q is not a tuning key", e.Name, key)
 			}
+		}
+	}
+}
+
+func TestParseAcceptsADFlashDrafterInItsOwnRepository(t *testing.T) {
+	body := "entries:\n" + entryYAML("a:1", "a.gguf",
+		"mmproj:", "  file: p.gguf", "  sha256: "+strings.Repeat("b", 64), "  size: 2",
+		"dflash:", "  hf_repo: org/drafter", "  file: d.gguf", "  sha256: "+strings.Repeat("c", 64), "  size: 3")
+	r, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := r.Entries[0]
+	if e.DFlash == nil || e.DFlash.HFRepo != "org/drafter" || e.DFlash.File != "d.gguf" {
+		t.Fatalf("dflash %+v", e.DFlash)
+	}
+	if got := e.RepoOf(*e.DFlash); got != "org/drafter" {
+		t.Errorf("RepoOf(dflash) = %q, want the sibling's own repository", got)
+	}
+	if got := e.RepoOf(*e.MMProj); got != "org/repo" {
+		t.Errorf("RepoOf(mmproj) = %q, want the entry's repository", got)
+	}
+	if d, kind := e.Draft(); d == nil || kind != "dflash" || d.File != "d.gguf" {
+		t.Errorf("Draft() = %v, %q", d, kind)
+	}
+	if files := e.Files(); len(files) != 3 || files[2].File != "d.gguf" || files[2].HFRepo != "org/drafter" {
+		t.Errorf("Files() = %+v, want the main file, the projector and the drafter", files)
+	}
+}
+
+func TestParseRefusesBothDraftKinds(t *testing.T) {
+	body := "entries:\n" + entryYAML("a:1", "a.gguf",
+		"mtp:", "  file: m.gguf", "  sha256: "+strings.Repeat("b", 64), "  size: 2",
+		"dflash:", "  file: d.gguf", "  sha256: "+strings.Repeat("c", 64), "  size: 3")
+	_, err := Parse([]byte(body))
+	if err == nil || !strings.Contains(err.Error(), "both mtp and dflash") {
+		t.Fatalf("want an error naming both draft kinds, got %v", err)
+	}
+}
+
+func TestParseRefusesABadSiblingRepository(t *testing.T) {
+	for _, repo := range []string{`"../x"`, "a/b/c", "a/b..c"} {
+		body := "entries:\n" + entryYAML("a:1", "a.gguf",
+			"dflash:", "  hf_repo: "+repo, "  file: d.gguf", "  sha256: "+strings.Repeat("c", 64), "  size: 3")
+		_, err := Parse([]byte(body))
+		if err == nil || !strings.Contains(err.Error(), "owner/name") {
+			t.Errorf("sibling hf_repo %s: want an owner/name error, got %v", repo, err)
+		}
+	}
+}
+
+func TestPresetAcceptsTheSpecDraftKeysAndRefusesTheRemovedOnes(t *testing.T) {
+	ok := "entries:\n" + entryYAML("a:1", "a.gguf", "preset:", `  spec-draft-n-max: "6"`, `  spec-draft-n-min: "0"`,
+		`  spec-draft-p-min: "0.5"`, `  draft-p-min: "0.5"`, `  spec-draft-ngl: "999"`, `  ngld: "999"`)
+	if _, err := Parse([]byte(ok)); err != nil {
+		t.Fatalf("the spec-draft keys were refused: %v", err)
+	}
+	for old, renamed := range map[string]string{"draft-max": "spec-draft-n-max", "draft-min": "spec-draft-n-min"} {
+		body := "entries:\n" + entryYAML("a:1", "a.gguf", "preset:", "  "+old+`: "6"`)
+		_, err := Parse([]byte(body))
+		if err == nil || !strings.Contains(err.Error(), "llama-server renamed it to "+renamed) {
+			t.Errorf("%s, which llama-server removed, must be refused with its new name: %v", old, err)
 		}
 	}
 }

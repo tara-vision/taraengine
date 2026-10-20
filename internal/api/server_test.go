@@ -301,7 +301,7 @@ func pulled(t *testing.T, h *harness, name string) {
 		t.Fatalf("%s not in the registry", name)
 	}
 	for _, f := range e.Files() {
-		p := h.cat.Store.Path(e.HFRepo, f.File)
+		p := h.cat.Store.Path(e.RepoOf(f), f.File)
 		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 			t.Fatal(err)
 		}

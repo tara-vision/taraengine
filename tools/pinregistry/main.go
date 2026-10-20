@@ -80,12 +80,22 @@ type entry struct {
 	art  *pull.Artifact
 }
 
+// repos tracks which repository the next file line belongs to: the entry's own, unless a sibling named one of its
+// own just above (a drafter published apart from its model), which holds for that one file. The entry's own hf_repo
+// line is the one at the entry's indentation (width); a deeper one is a sibling's, whichever comes first.
+type repos struct {
+	width   int
+	entry   string
+	pending string
+}
+
 // fill walks the registry text line by line and returns it with every missing sha256 and size replaced by the value
 // Hugging Face reports for the file above it. A "- name:" line starts an entry, so a placeholder can never take the
 // values of the previous entry's file. The file is asked about once, however many of its values are missing, and
 // not at all when none is.
 func fill(ctx context.Context, r *pull.Resolver, text string) (string, error) {
 	var cur entry
+	var rp repos
 	in := strings.Split(text, "\n")
 	out := make([]string, 0, len(in))
 	for n, l := range in {
@@ -97,11 +107,14 @@ func fill(ctx context.Context, r *pull.Resolver, text string) (string, error) {
 		key, value := m[2], strings.TrimSpace(m[3])
 		switch {
 		case key == "name":
-			cur = entry{}
+			cur, rp = entry{}, repos{width: len(m[1])}
 		case key == "hf_repo":
-			cur = entry{repo: value}
+			if len(m[1]) == rp.width {
+				rp.entry = value // the entry's own repository, at the entry's indentation
+			}
+			cur, rp.pending = entry{}, value
 		case key == "file":
-			cur = entry{repo: cur.repo, file: value}
+			cur, rp.pending = entry{repo: rp.pending, file: value}, rp.entry
 		case missing(key, value):
 			pinned, next, err := cur.pin(ctx, r, key)
 			if err != nil {

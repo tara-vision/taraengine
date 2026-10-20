@@ -3,6 +3,7 @@ package llamaserver
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -156,4 +157,18 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestRenderPresetsWritesTheDraftKind(t *testing.T) {
+	cases := map[string]string{"dflash": "draft-dflash", "mtp": "draft-mtp", "": "draft-mtp"}
+	for kind, want := range cases {
+		got := RenderPresets(map[string]string{}, []PresetModel{{Name: "a:1", ModelPath: "/m/a.gguf", DraftPath: "/m/d.gguf", DraftKind: kind}})
+		if !strings.Contains(got, "spec-type = "+want+"\n") {
+			t.Errorf("draft kind %q rendered:\n%s\nwant spec-type = %s", kind, got, want)
+		}
+	}
+	got := RenderPresets(map[string]string{}, []PresetModel{{Name: "a:1", ModelPath: "/m/a.gguf", DraftKind: "dflash"}})
+	if strings.Contains(got, "spec-type") {
+		t.Errorf("a draft kind without a draft path rendered spec-type:\n%s", got)
+	}
 }

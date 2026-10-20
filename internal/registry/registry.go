@@ -21,11 +21,13 @@ var embedded []byte
 // Tiers are the host RAM classes, smallest first.
 var Tiers = []string{"small", "16", "32", "48"}
 
-// Sibling is a file pulled next to the main GGUF: a multimodal projector or a speculative-decoding draft.
+// Sibling is a file pulled next to the main GGUF: a multimodal projector or a speculative-decoding draft. It comes
+// from the entry's repository unless it names one of its own (a drafter published apart from its model).
 type Sibling struct {
 	File   string `yaml:"file"`
 	SHA256 string `yaml:"sha256"`
 	Size   int64  `yaml:"size"`
+	HFRepo string `yaml:"hf_repo"`
 }
 
 // Entry is one catalog model.
@@ -43,7 +45,8 @@ type Entry struct {
 	Tier         string            `yaml:"tier"`
 	Default      bool              `yaml:"default"`
 	MMProj       *Sibling          `yaml:"mmproj"`
-	MTP          *Sibling          `yaml:"mtp"`
+	MTP          *Sibling          `yaml:"mtp"`    // a multi-token-prediction draft, served as draft-mtp
+	DFlash       *Sibling          `yaml:"dflash"` // a DFlash drafter, served as draft-dflash; never together with mtp
 	Preset       map[string]string `yaml:"preset"` // tuning keys only, see tuningKeyList
 	MinRuntime   string            `yaml:"min_runtime"`
 	Notes        string            `yaml:"notes"`
@@ -163,6 +166,9 @@ func (e Entry) validate() error {
 	if !knownTier(e.Tier) {
 		return fmt.Errorf("registry: %s has unknown tier %q", e.Name, e.Tier)
 	}
+	if e.MTP != nil && e.DFlash != nil {
+		return fmt.Errorf("registry: %s has both mtp and dflash drafts; a model takes one", e.Name)
+	}
 	for _, f := range e.Files() {
 		if err := f.validate(e.Name); err != nil {
 			return err
@@ -181,6 +187,9 @@ func (s Sibling) validate(owner string) error {
 	if s.Size <= 0 {
 		return fmt.Errorf("registry: %s file %s has no size", owner, s.File)
 	}
+	if s.HFRepo != "" && (!hfRepoPattern.MatchString(s.HFRepo) || strings.Contains(s.HFRepo, "..")) {
+		return fmt.Errorf("registry: %s file %s hf_repo %q must be owner/name", owner, s.File, s.HFRepo)
+	}
 	return nil
 }
 
@@ -193,16 +202,35 @@ func knownTier(t string) bool {
 	return false
 }
 
-// Files lists the entry's artifacts: the main file, then the projector, then the draft.
+// Files lists the entry's artifacts: the main file, then the projector, then the draft of either kind.
 func (e Entry) Files() []Sibling {
 	files := []Sibling{{File: e.File, SHA256: e.SHA256, Size: e.Size}}
 	if e.MMProj != nil {
 		files = append(files, *e.MMProj)
 	}
-	if e.MTP != nil {
-		files = append(files, *e.MTP)
+	if d, _ := e.Draft(); d != nil {
+		files = append(files, *d)
 	}
 	return files
+}
+
+// RepoOf is the repository a file of the entry comes from: the sibling's own when it names one, else the entry's.
+func (e Entry) RepoOf(s Sibling) string {
+	if s.HFRepo != "" {
+		return s.HFRepo
+	}
+	return e.HFRepo
+}
+
+// Draft returns the entry's draft model and its kind, "mtp" or "dflash", or nil and "" without one.
+func (e Entry) Draft() (*Sibling, string) {
+	switch {
+	case e.DFlash != nil:
+		return e.DFlash, "dflash"
+	case e.MTP != nil:
+		return e.MTP, "mtp"
+	}
+	return nil, ""
 }
 
 // Find returns the entry with that exact name.

@@ -223,7 +223,7 @@ func presetModels(cat catalog.Catalog, cfg config.Config) modelLister {
 			}
 			out = append(out, llamaserver.PresetModel{
 				Name: it.Name, ModelPath: it.ModelPath, MMProjPath: it.MMProjPath, DraftPath: it.DraftPath,
-				Context: window, Extra: extra,
+				DraftKind: it.DraftKind, Context: window, Extra: extra,
 			})
 		}
 		return out, nil
