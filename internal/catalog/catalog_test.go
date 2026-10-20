@@ -283,3 +283,46 @@ func TestItemsCarryTheWindowTheirModelWasTrainedFor(t *testing.T) {
 		t.Fatalf("an import has the window its index entry keeps: %d and %d", m.NativeContext, p.NativeContext)
 	}
 }
+
+func TestItemsResolveADrafterUnderItsOwnRepository(t *testing.T) {
+	body := `entries:
+  - name: a:1
+    family: a
+    hf_repo: org/repo
+    file: a.gguf
+    sha256: ` + strings.Repeat("a", 64) + `
+    size: 10
+    tier: "16"
+    mmproj:
+      file: p.gguf
+      sha256: ` + strings.Repeat("b", 64) + `
+      size: 2
+    dflash:
+      hf_repo: org/drafter
+      file: d.gguf
+      sha256: ` + strings.Repeat("c", 64) + `
+      size: 3
+`
+	reg, err := registry.Parse([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := pull.Store{Dir: filepath.Join(t.TempDir(), "models")}
+	c := Catalog{Registry: reg, Store: store, Index: &Index{Path: filepath.Join(store.Dir, "index.json")}}
+	touch(t, store.Path("org/repo", "a.gguf"))
+	touch(t, store.Path("org/repo", "p.gguf"))
+	touch(t, store.Path("org/drafter", "d.gguf"))
+	it, ok, err := c.Find("a:1")
+	if err != nil || !ok {
+		t.Fatalf("find: %v %v", ok, err)
+	}
+	if !it.Pulled || it.DraftKind != "dflash" {
+		t.Fatalf("pulled %v, draft kind %q, want pulled and dflash", it.Pulled, it.DraftKind)
+	}
+	if want := filepath.Join("org", "drafter", "d.gguf"); !strings.HasSuffix(it.DraftPath, want) {
+		t.Errorf("draft path %q, want it under the drafter's own repository", it.DraftPath)
+	}
+	if want := filepath.Join("org", "repo", "p.gguf"); !strings.HasSuffix(it.MMProjPath, want) {
+		t.Errorf("projector path %q, want it under the entry's repository", it.MMProjPath)
+	}
+}

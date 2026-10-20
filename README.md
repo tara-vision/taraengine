@@ -301,8 +301,9 @@ seconds later, SIGKILL.
 ## Models
 
 The catalog is built into the binary. Each entry pins a Hugging Face file by size and sha256, together with the
-projector that lets a model read images and the draft model that speeds it up (speculative decoding), when the
-model has them. A pull fetches all of them.
+projector that lets a model read images and the draft model that speeds it up (speculative decoding: a
+multi-token-prediction head, `mtp`, or a DFlash drafter, `dflash`), when the model has them. A pull fetches all of
+them, a sibling from its own repository when it names one.
 
 | Name          | Tier            | Size    | Capabilities            | KV cache |
 |---------------|-----------------|---------|-------------------------|----------|
@@ -372,9 +373,13 @@ already holds.
 A gated or private repository needs `hf_token` in the configuration, or `TARAENGINE_HF_TOKEN` in the environment of
 `serve`. To use a catalog of your own, put a `registry.yaml` in the data directory; it replaces the built-in one. It
 is checked like the built-in one: a key that taraengine does not know, a `preset` key that does not tune how a model
-runs (the error lists the keys that do), two names that llama-server would serve under one id, and a second default
-for a tier are refused with an error that names them. The engine itself sets where a model is, its context window, its
-projector and its draft.
+runs (the error lists the keys that do), two names that llama-server would serve under one id, a model with both an
+`mtp` and a `dflash` draft, and a second default for a tier are refused with an error that names them. A projector or
+a draft is a `file` with its `sha256` and `size` in the entry's repository, or in one of its own with `hf_repo` (a
+drafter published apart from its model); from a checkout of this repository, `go run ./tools/pinregistry <file>` fills
+the pins. The engine itself sets
+where a model is, its context window, its projector, its draft and the draft's kind (`spec-type`); a preset tunes the
+rest, the drafter's token count with `spec-draft-n-max` among it.
 
 ```sh
 taraengine load gemma4:12b                  # loads it, and waits until it is ready
@@ -383,7 +388,8 @@ taraengine ps                               # what is loaded, and what it holds 
 taraengine unload gemma4:12b
 ```
 
-`taraengine rm <model>` deletes a pulled model and its projector and draft file from disk.
+`taraengine rm <model>` deletes a pulled model and its projector and draft file from disk, each under its own
+repository.
 
 ```
 $ taraengine load gemma4:12b

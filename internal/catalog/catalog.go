@@ -17,6 +17,7 @@ type Item struct {
 	ModelPath  string
 	MMProjPath string
 	DraftPath  string
+	DraftKind  string // "mtp" or "dflash" when DraftPath is set
 	Local      bool
 	Inferred   bool
 	Size       int64
@@ -78,11 +79,11 @@ func (c Catalog) fromEntry(e *registry.Entry) Item {
 		Capabilities: slices.Clone(e.Capabilities),
 	}
 	it.Pulled = c.Store.Exists(e.HFRepo, e.File)
-	if e.MMProj != nil && c.Store.Exists(e.HFRepo, e.MMProj.File) {
-		it.MMProjPath = c.Store.Path(e.HFRepo, e.MMProj.File)
+	if p := e.MMProj; p != nil && c.Store.Exists(e.RepoOf(*p), p.File) {
+		it.MMProjPath = c.Store.Path(e.RepoOf(*p), p.File)
 	}
-	if e.MTP != nil && c.Store.Exists(e.HFRepo, e.MTP.File) {
-		it.DraftPath = c.Store.Path(e.HFRepo, e.MTP.File)
+	if d, kind := e.Draft(); d != nil && c.Store.Exists(e.RepoOf(*d), d.File) {
+		it.DraftPath, it.DraftKind = c.Store.Path(e.RepoOf(*d), d.File), kind
 	}
 	return it
 }

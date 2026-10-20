@@ -350,3 +350,98 @@ func TestMainExitsWithTheStatusOfRun(t *testing.T) {
 		t.Fatalf("main exited with %v, want %v", codes, want)
 	}
 }
+
+// drafterFile is a drafter sibling in a repository of its own, which the stub hub knows for the tests below.
+const drafterFile = "nvidia/drafter-GGUF/draft.gguf"
+
+func withDrafter(t *testing.T) {
+	t.Helper()
+	hubFiles[drafterFile] = struct {
+		size int64
+		sha  string
+	}{size: 777, sha: otherSHA}
+	t.Cleanup(func() { delete(hubFiles, drafterFile) })
+}
+
+func TestFillPinsASiblingInItsOwnRepository(t *testing.T) {
+	withDrafter(t)
+	h := newHub(t)
+	text := strings.Replace(demoRegistry(modelSHA, "1185376", projSHA, "5000"), "    notes: kept as written\n",
+		"    dflash:\n      hf_repo: nvidia/drafter-GGUF\n      file: draft.gguf\n      sha256: <pin>\n      size: 0\n    notes: kept as written\n", 1)
+	out, err := fillWith(t, h, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "      sha256: "+otherSHA+"\n      size: 777\n") {
+		t.Fatalf("the drafter was not pinned from its own repository:\n%s", out)
+	}
+	if got := h.requests(); !slices.Equal(got, []string{drafterFile}) {
+		t.Fatalf("asked %v, want the drafter under its own repository only", got)
+	}
+}
+
+// YAML allows any key order: a sibling block with a repository of its own may stand before the entry's own hf_repo
+// line, and the walker tells them apart by indentation, not by which comes first.
+func TestFillTakesTheEntryRepositoryByIndentation(t *testing.T) {
+	withDrafter(t)
+	h := newHub(t)
+	text := `entries:
+  - name: demo:1b
+    dflash:
+      hf_repo: nvidia/drafter-GGUF
+      file: draft.gguf
+      sha256: ` + otherSHA + `
+      size: 777
+    family: demo
+    hf_repo: ggml-org/demo-GGUF
+    file: demo-Q4_0.gguf
+    sha256: <pin>
+    size: 0
+    mmproj:
+      file: mmproj-demo.gguf
+      sha256: <pin>
+      size: 0
+`
+	out, err := fillWith(t, h, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "    sha256: "+modelSHA+"\n    size: 1185376\n") || !strings.Contains(out, "      sha256: "+projSHA+"\n      size: 5000\n") {
+		t.Fatalf("the model and the projector were not pinned against the entry's repository:\n%s", out)
+	}
+	if got := h.requests(); !slices.Equal(got, []string{modelFile, projFile}) {
+		t.Fatalf("asked %v, want the model and the projector under the entry's repository", got)
+	}
+}
+
+func TestFillResolvesASiblingAfterAnotherRepositoryAgainstTheEntry(t *testing.T) {
+	withDrafter(t)
+	h := newHub(t)
+	text := `entries:
+  - name: demo:1b
+    family: demo
+    hf_repo: ggml-org/demo-GGUF
+    file: demo-Q4_0.gguf
+    sha256: ` + modelSHA + `
+    size: 1185376
+    dflash:
+      hf_repo: nvidia/drafter-GGUF
+      file: draft.gguf
+      sha256: ` + otherSHA + `
+      size: 777
+    mmproj:
+      file: mmproj-demo.gguf
+      sha256: <pin>
+      size: 0
+`
+	out, err := fillWith(t, h, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "      sha256: "+projSHA+"\n      size: 5000\n") {
+		t.Fatalf("the projector was not pinned:\n%s", out)
+	}
+	if got := h.requests(); !slices.Equal(got, []string{projFile}) {
+		t.Fatalf("asked %v, want the projector under the entry's repository, not the drafter's", got)
+	}
+}

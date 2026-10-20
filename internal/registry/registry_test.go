@@ -146,7 +146,8 @@ func TestTheCatalogPinsEachModelsKVCache(t *testing.T) {
 
 func TestCanonicalKeyNamesAnAliasByItsLongName(t *testing.T) {
 	cases := map[string]string{"ctk": "cache-type-k", "ctv": "cache-type-v", "ngl": "n-gpu-layers", "fa": "flash-attn",
-		"cache-type-k": "cache-type-k", "temp": "temp"}
+		"cache-type-k": "cache-type-k", "temp": "temp", "draft-p-min": "spec-draft-p-min", "ngld": "spec-draft-ngl",
+		"gpu-layers-draft": "spec-draft-ngl", "n-gpu-layers-draft": "spec-draft-ngl"}
 	for key, want := range cases {
 		if got := CanonicalKey(key); got != want {
 			t.Errorf("CanonicalKey(%q) = %q, want %q", key, got, want)

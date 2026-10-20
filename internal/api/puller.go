@@ -94,22 +94,23 @@ func (s *Server) transfer(ctx context.Context, p plan, emit func(api.PullEvent))
 func (s *Server) pullRegistry(ctx context.Context, e registry.Entry, emit func(api.PullEvent)) error {
 	store := s.deps.Catalog.Store
 	for _, f := range e.Files() {
-		dest, err := store.Locate(e.HFRepo, f.File)
+		repo := e.RepoOf(f)
+		dest, err := store.Locate(repo, f.File)
 		if err != nil {
 			return err
 		}
-		if store.Exists(e.HFRepo, f.File) {
+		if store.Exists(repo, f.File) {
 			emit(api.PullEvent{Stage: stageDone, File: f.File, Bytes: f.Size, Total: f.Size})
 			continue
 		}
 		emit(api.PullEvent{Stage: stageResolving, File: f.File, Total: f.Size})
-		art, err := s.deps.Fetcher.Resolve(ctx, e.HFRepo, f.File)
+		art, err := s.deps.Fetcher.Resolve(ctx, repo, f.File)
 		if err != nil {
 			return err
 		}
 		if art.SHA256 != f.SHA256 {
 			return fmt.Errorf("pull: %s/%s: Hugging Face reports sha256 %s, the registry pins %s; "+
-				"the artifact changed upstream", e.HFRepo, f.File, art.SHA256, f.SHA256)
+				"the artifact changed upstream", repo, f.File, art.SHA256, f.SHA256)
 		}
 		if err := s.fetch(ctx, art, dest, f.File, emit); err != nil {
 			return err
@@ -173,12 +174,22 @@ func (s *Server) fetch(ctx context.Context, art pull.Artifact, dest, file string
 func (s *Server) remove(it catalog.Item) error {
 	store := s.deps.Catalog.Store
 	if e := it.Entry; e != nil {
-		siblings := e.Files()
-		files := make([]string, 0, len(siblings))
-		for _, f := range siblings {
-			files = append(files, f.File)
+		// The files go repository by repository, the entry's own first: a drafter published apart from its model
+		// lives under its own directory of the store.
+		byRepo, repos := map[string][]string{}, []string{}
+		for _, f := range e.Files() {
+			repo := e.RepoOf(f)
+			if _, seen := byRepo[repo]; !seen {
+				repos = append(repos, repo)
+			}
+			byRepo[repo] = append(byRepo[repo], f.File)
 		}
-		return store.Remove(e.HFRepo, files...)
+		for _, repo := range repos {
+			if err := store.Remove(repo, byRepo[repo]...); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	rel, _ := filepath.Rel(store.Dir, it.ModelPath) // when it fails rel is empty, and Remove refuses an empty name
 	if err := store.Remove("", rel); err != nil {
