@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- llama-server runs one slot (`parallel = 1` in the engine's global preset): the engine serves one request at a
+  time, and the memory of a loaded model is the single-user figure, smaller by the KV cache of the three slots the
+  automatic count added at a 32K window. `preset_global: {parallel: "4"}` brings the automatic count back.
+
 ## [0.4.1] - 2026-10-21
 
 ### Security

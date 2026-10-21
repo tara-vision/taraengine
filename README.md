@@ -400,14 +400,14 @@ gemma4:12b  loaded  32768    10.0 GiB measured
 ```
 
 The context window defaults to 32768 tokens, or to the model's native maximum when that is smaller. `context` in the
-configuration changes the default, and `context_by_tier` sets it per RAM tier. The memory of a loaded model is
-measured on NVIDIA, as the GPU memory that the driver reports for the model's process. On a Mac the GPU has no
-per-process figure, so the number is the process's resident memory and is labeled `estimated`. A dash means that
-there is no figure.
-A model that a request through `/v1` brings up on its own gets its figure from a later read of the model list
-(`taraengine list`, `taraengine ps` or the API) that finds no load, unload or catalog change under way. A model left
-idle for `sleep_idle_seconds` sleeps: `ps` shows `sleeping` with the figure of its last run, the next request wakes
-it, and `taraengine load` of a sleeping model at its window answers at once.
+configuration changes the default, and `context_by_tier` sets it per RAM tier. The memory of a loaded model is measured
+on NVIDIA, as the GPU memory that the driver reports for the model's process. It is the memory of one request: the
+engine runs one slot unless `parallel` is raised in `preset_global`. On a Mac the GPU has no per-process figure, so the
+number is the process's resident memory and is labeled `estimated`. A dash means that there is no figure. A model that a
+request through `/v1` brings up on its own gets its figure from a later read of the model list (`taraengine list`,
+`taraengine ps` or the API) that finds no load, unload or catalog change under way. A model left idle for
+`sleep_idle_seconds` sleeps: `ps` shows `sleeping` with the figure of its last run, the next request wakes it, and
+`taraengine load` of a sleeping model at its window answers at once.
 
 ## API
 
@@ -493,7 +493,7 @@ Keep the key in the configuration file (with a mode that only you can read) or i
 | `hf_token` | none | A Hugging Face token for gated or private repositories. It is sent to Hugging Face only and never logged. |
 | `load_timeout` | `600` | Seconds that a load may take before it is given up, at least 1. Raise it for a slow disk. |
 | `runtime_dir` | none | A runtime directory to run instead of the pinned build under the data directory. It has to hold the `manifest.json` that `runtime install` writes, and it is verified like the pinned build. |
-| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
+| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `parallel: "1"` (one request at a time; `"4"` brings llama-server's automatic slot count back, at the memory of three more KV caches), `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
 
 ```yaml
 # ~/.config/taraengine/config.yaml

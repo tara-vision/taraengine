@@ -1,6 +1,7 @@
 package llamaserver
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ flash-attn = auto
 jinja = true
 load-on-startup = false
 n-gpu-layers = 999
+parallel = 1
 reasoning-format = deepseek
 
 [qwen3.6-27b]
@@ -62,6 +64,7 @@ flash-attn = auto
 jinja = true
 load-on-startup = false
 n-gpu-layers = 999
+parallel = 1
 reasoning-format = deepseek
 
 [gemma4-12b]
@@ -84,6 +87,7 @@ flash-attn = auto
 jinja = true
 load-on-startup = false
 n-gpu-layers = 999
+parallel = 1
 reasoning-format = deepseek
 
 [glm-4.7-flash]
@@ -170,5 +174,21 @@ func TestRenderPresetsWritesTheDraftKind(t *testing.T) {
 	got := RenderPresets(map[string]string{}, []PresetModel{{Name: "a:1", ModelPath: "/m/a.gguf", DraftKind: "dflash"}})
 	if strings.Contains(got, "spec-type") {
 		t.Errorf("a draft kind without a draft path rendered spec-type:\n%s", got)
+	}
+}
+
+func TestDefaultGlobalPinsOneSlot(t *testing.T) {
+	got := RenderPresets(DefaultGlobal(), nil)
+	if !strings.Contains(got, "parallel = 1\n") {
+		t.Fatalf("the [*] section does not pin one slot:\n%s", got)
+	}
+}
+
+func TestPresetGlobalParallelWinsOverTheDefault(t *testing.T) {
+	global := DefaultGlobal()
+	maps.Copy(global, map[string]string{"parallel": "4"}) // what serve does with the operator's preset_global
+	got := RenderPresets(global, nil)
+	if !strings.Contains(got, "parallel = 4\n") || strings.Contains(got, "parallel = 1\n") {
+		t.Fatalf("the operator's parallel does not win:\n%s", got)
 	}
 }

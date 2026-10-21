@@ -23,12 +23,15 @@ type PresetModel struct {
 }
 
 // DefaultGlobal is the [*] section: jinja templates with native tool calls, flash attention when the
-// backend supports it, every layer on the GPU, thoughts in reasoning_content, nothing loaded at start.
+// backend supports it, every layer on the GPU, thoughts in reasoning_content, nothing loaded at start, and
+// one slot: the engine serves one request at a time, so a loaded model's memory is the single-user figure the
+// boards publish; preset_global {parallel: "4"} brings llama-server's automatic slot count back.
 func DefaultGlobal() map[string]string {
 	return map[string]string{
 		"jinja":            "true",
 		"flash-attn":       "auto",
 		"n-gpu-layers":     "999",
+		"parallel":         "1",
 		"reasoning-format": "deepseek",
 		"load-on-startup":  "false",
 	}
