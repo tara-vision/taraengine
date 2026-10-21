@@ -1,12 +1,18 @@
 package api
 
 import (
+	"errors"
+	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/catalog"
+	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
 )
@@ -229,8 +235,8 @@ func TestShowOfAnEscapeHatchModel(t *testing.T) {
 	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
 	_, data := h.do(t, http.MethodGet, "/api/models/extra", "", nil)
 	d := decode[api.ModelDetail](t, data)
-	if d.Name != "extra" || d.Status != "pulled" || d.Digest != "" || d.Tier != "" || len(d.Preset) != 1 || d.Preset["c"] != "32768" || d.Size != 1 {
-		t.Fatalf("detail: %+v", d)
+	if d.Name != "extra" || d.Status != "pulled" || d.Digest != "abc" || d.Tier != "" || len(d.Preset) != 1 || d.Preset["c"] != "32768" || d.Size != 1 {
+		t.Fatalf("detail: %+v", d) // the digest is the pull's, as the index recorded it
 	}
 }
 
@@ -276,5 +282,92 @@ func TestRmAndAReimportDropTheSavedCapabilities(t *testing.T) {
 	}
 	if entries, err := h.cat.Index.Load(); err != nil || len(entries) != 0 {
 		t.Fatalf("rm drops the entry, and the list with it: %+v %v", entries, err)
+	}
+}
+
+func TestListModelsCarriesOrigin(t *testing.T) {
+	var changedName string
+	h := newHarness(t, "", func(d *Deps) {
+		emb, err := registry.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries := slices.Clone(d.Catalog.Registry.Entries)
+		changed := entries[0]
+		changed.Preset = maps.Clone(changed.Preset)
+		if changed.Preset == nil {
+			changed.Preset = map[string]string{}
+		}
+		changed.Preset["spec-draft-n-max"] = "6"
+		entries[0], changedName = changed, changed.Name
+		d.Catalog.Registry = &registry.Registry{Entries: entries}
+		d.Catalog.Embedded = emb
+	})
+	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
+	models := modelsByName(t, h)
+	if got := models[changedName].Origin; got != "registry" {
+		t.Fatalf("%s served from a registry file that holds it differently: origin %q", changedName, got)
+	}
+	if got := models["gemma4:12b"].Origin; got != "catalog" {
+		t.Fatalf("a copy equal to the embedded entry: origin %q", got)
+	}
+	if got := models["extra"].Origin; got != "import" {
+		t.Fatalf("an import: origin %q", got)
+	}
+}
+
+func TestModelsListAndShowNameAnImportsFile(t *testing.T) {
+	h := newHarness(t, "")
+	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
+	m := modelsByName(t, h)["extra"]
+	_, data := h.do(t, http.MethodGet, "/api/models/extra", "", nil)
+	if d := decode[api.ModelDetail](t, data); d.Digest != "abc" || d.Source == nil || d.Source.Repo != "org/repo" {
+		t.Fatalf("the show call names an import's digest and source: %+v", d)
+	}
+	if m.Source == nil || m.Source.Repo != "org/repo" || m.Source.File != "extra.gguf" || m.Source.SHA256 != "abc" || m.Source.Path != "" {
+		t.Fatalf("an hf import names its repository, file and digest: %+v", m.Source)
+	}
+	if g := modelsByName(t, h)["gemma4:12b"]; g.Source != nil {
+		t.Fatalf("a catalog model has no source block: %+v", g.Source)
+	}
+}
+
+func TestALocalImportCarriesItsPathAndDigest(t *testing.T) {
+	h := newHarness(t, "")
+	local := filepath.Join(t.TempDir(), "Mine.gguf")
+	if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if resp, data := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: local}); resp.StatusCode != 200 {
+		t.Fatalf("pull: %d %s", resp.StatusCode, data)
+	}
+	m := modelsByName(t, h)["Mine"]
+	want := "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881" // sha256 of "x"
+	if m.Source == nil || m.Source.Path != h.cat.Store.Path("local", "Mine.gguf") || m.Source.SHA256 != want || m.Source.Repo != "" {
+		t.Fatalf("a local import names its path and digest: %+v", m.Source)
+	}
+	_, data := h.do(t, http.MethodGet, "/api/models/Mine", "", nil)
+	if d := decode[api.ModelDetail](t, data); d.Digest != want[:12] {
+		t.Fatalf("the show call's digest is the first twelve characters: %q", d.Digest)
+	}
+}
+
+func TestALocalImportThatCannotBeReadIsNotPulled(t *testing.T) {
+	h := newHarness(t, "")
+	local := filepath.Join(t.TempDir(), "Sealed.gguf")
+	if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hashLocalFile = func(string) (string, error) { return "", errors.New("the file vanished under the hash") }
+	t.Cleanup(func() { hashLocalFile = pull.SHA256File })
+	resp, data := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: local})
+	if resp.StatusCode == 200 || !strings.Contains(string(data), "Sealed") || !strings.Contains(string(data), "vanished") {
+		t.Fatalf("a local file the engine cannot hash: %d %s", resp.StatusCode, data)
+	}
+	if _, err := os.Lstat(h.cat.Store.Path("local", "Sealed.gguf")); !os.IsNotExist(err) {
+		t.Fatalf("no link is left behind: %v", err)
+	}
+	if entries, _ := h.cat.Index.Load(); len(entries) != 0 {
+		t.Fatalf("no index entry is written: %+v", entries)
 	}
 }

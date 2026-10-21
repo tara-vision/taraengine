@@ -22,9 +22,20 @@ type Model struct {
 	CapabilitiesInferred bool     `json:"capabilities_inferred"`
 	Tier                 string   `json:"tier,omitempty"`
 	Default              bool     `json:"default"`
+	Origin               string   `json:"origin"`           // catalog, registry (a registry.yaml) or import
+	Source               *Source  `json:"source,omitempty"` // what an import runs; absent for a catalog model
 	Memory               *Memory  `json:"memory,omitempty"`
 	ExitCode             int      `json:"exit_code,omitempty"`
 	Error                string   `json:"error,omitempty"`
+}
+
+// Source names the file an imported model runs: the repository and file of an hf:// import, or the path of a local
+// one (its link in the model store), and the file's sha256 as the pull verified or computed it.
+type Source struct {
+	Repo   string `json:"repo,omitempty"`
+	File   string `json:"file,omitempty"`
+	Path   string `json:"path,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // ModelDetail is the show call.

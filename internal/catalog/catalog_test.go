@@ -1,8 +1,10 @@
 package catalog
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -324,5 +326,152 @@ func TestItemsResolveADrafterUnderItsOwnRepository(t *testing.T) {
 	}
 	if want := filepath.Join("org", "repo", "p.gguf"); !strings.HasSuffix(it.MMProjPath, want) {
 		t.Errorf("projector path %q, want it under the entry's repository", it.MMProjPath)
+	}
+}
+
+func originsByName(t *testing.T, c Catalog) map[string]string {
+	t.Helper()
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, it := range items {
+		out[it.Name] = it.Origin
+	}
+	return out
+}
+
+func TestOriginIsCatalogWithoutAnOverride(t *testing.T) {
+	c, _ := testCatalog(t)
+	for name, origin := range originsByName(t, c) {
+		if origin != OriginCatalog {
+			t.Fatalf("%s: origin %q, want %q", name, origin, OriginCatalog)
+		}
+	}
+}
+
+func TestOriginIsCatalogForAnEntryEqualToTheEmbeddedOne(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	for name, origin := range originsByName(t, c) {
+		if origin != OriginCatalog {
+			t.Fatalf("%s: origin %q, want %q", name, origin, OriginCatalog)
+		}
+	}
+}
+
+func TestOriginIsRegistryForAnEntryTheEmbeddedCatalogHoldsDifferently(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	entries := slices.Clone(c.Registry.Entries)
+	changed := entries[0]
+	changed.Preset = maps.Clone(changed.Preset)
+	if changed.Preset == nil {
+		changed.Preset = map[string]string{}
+	}
+	changed.Preset["spec-draft-n-max"] = "6"
+	entries[0] = changed
+	stranger := entries[1]
+	stranger.Name = "stranger:1b"
+	entries = append(entries, stranger)
+	c.Registry = &registry.Registry{Entries: entries}
+	got := originsByName(t, c)
+	if got[changed.Name] != OriginRegistry {
+		t.Fatalf("a copied entry with one key changed: %q, want %q", got[changed.Name], OriginRegistry)
+	}
+	if got["stranger:1b"] != OriginRegistry {
+		t.Fatalf("a name the embedded catalog lacks: %q, want %q", got["stranger:1b"], OriginRegistry)
+	}
+	if got[entries[2].Name] != OriginCatalog {
+		t.Fatalf("an untouched copy: %q, want %q", got[entries[2].Name], OriginCatalog)
+	}
+}
+
+func TestOriginIsImportForAnIndexEntry(t *testing.T) {
+	c, store := testCatalog(t)
+	local := filepath.Join(t.TempDir(), "mine.gguf")
+	touch(t, local)
+	link, err := store.LinkLocal("mine", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Index.Add(IndexEntry{Name: "mine", Path: link, Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := originsByName(t, c)["mine"]; got != OriginImport {
+		t.Fatalf("an import: %q, want %q", got, OriginImport)
+	}
+}
+
+func TestAnImportCarriesItsFileAndDigest(t *testing.T) {
+	c, store := testCatalog(t)
+	digest := strings.Repeat("ab", 32)
+	entry := IndexEntry{Name: "ghost", Repo: "org/repo", File: "ghost.gguf", SHA256: digest, Quantization: "Q4_K_M",
+		Path: store.Path("org/repo", "ghost.gguf"), Size: 1}
+	if err := c.Index.Add(entry); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Item
+	for _, it := range items {
+		if it.Name == "ghost" {
+			got = it
+		}
+	}
+	if got.Repo != "org/repo" || got.File != "ghost.gguf" || got.SHA256 != digest || got.Quantization != "Q4_K_M" || got.Local {
+		t.Fatalf("an hf import: %+v", got)
+	}
+}
+
+func TestALocalImportCarriesItsPath(t *testing.T) {
+	c, store := testCatalog(t)
+	local := filepath.Join(t.TempDir(), "mine.gguf")
+	touch(t, local)
+	link, err := store.LinkLocal("mine", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Index.Add(IndexEntry{Name: "mine", Path: link, Size: 1, SHA256: strings.Repeat("cd", 32)}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Name == "mine" {
+			if !it.Local || it.ModelPath != link || it.Repo != "" || it.File != "" || it.SHA256 != strings.Repeat("cd", 32) {
+				t.Fatalf("a local import: %+v", it)
+			}
+			return
+		}
+	}
+	t.Fatal("mine is not listed")
+}
+
+func TestOriginIgnoresTheNoteOfACopiedEntry(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	entries := slices.Clone(c.Registry.Entries)
+	entries[0].Notes = "a note of the operator's own, which changes nothing the engine serves"
+	c.Registry = &registry.Registry{Entries: entries}
+	if got := originsByName(t, c)[entries[0].Name]; got != OriginCatalog {
+		t.Fatalf("a copy with another note: %q, want %q", got, OriginCatalog)
 	}
 }

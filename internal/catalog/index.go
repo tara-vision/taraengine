@@ -21,6 +21,7 @@ type IndexEntry struct {
 	Repo          string   `json:"repo,omitempty"`
 	File          string   `json:"file,omitempty"`
 	SHA256        string   `json:"sha256,omitempty"`
+	Quantization  string   `json:"quantization,omitempty"` // the weights' file type as the header named it at the pull
 	Path          string   `json:"path"`
 	Size          int64    `json:"size"`
 	NativeContext int      `json:"native_context,omitempty"`

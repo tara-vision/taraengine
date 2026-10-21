@@ -22,12 +22,19 @@ func TestWireFormat(t *testing.T) {
 			},
 			`{"name":"gemma4:12b","status":"loaded","size":7,"family":"gemma4","params":"12B","quantization":"Q4_0",` +
 				`"context":32768,"native_context":262144,"capabilities":["tools","vision"],"capabilities_inferred":true,` +
-				`"tier":"16","default":true,"memory":{"bytes":9,"source":"measured"},"exit_code":137,"error":"oom"}`,
+				`"tier":"16","default":true,"origin":"","memory":{"bytes":9,"source":"measured"},"exit_code":137,"error":"oom"}`,
+		},
+		{
+			"Model names an import's origin and source",
+			Model{Name: "x", Status: "pulled", Capabilities: []string{}, Origin: "import",
+				Source: &Source{Repo: "org/repo", File: "x.gguf", SHA256: "ab"}},
+			`{"name":"x","status":"pulled","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,` +
+				`"default":false,"origin":"import","source":{"repo":"org/repo","file":"x.gguf","sha256":"ab"}}`,
 		},
 		{
 			"Model keeps the empty capability list and drops the optional fields",
 			Model{Name: "x", Status: "available", Capabilities: []string{}},
-			`{"name":"x","status":"available","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,"default":false}`,
+			`{"name":"x","status":"available","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,"default":false,"origin":""}`,
 		},
 		{
 			"ModelDetail flattens the model",
@@ -36,13 +43,13 @@ func TestWireFormat(t *testing.T) {
 				Digest: "3712b9bd32ca", Preset: map[string]string{"c": "8192"}, LogTail: "line",
 			},
 			`{"name":"x","status":"pulled","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,` +
-				`"default":false,"digest":"3712b9bd32ca","preset":{"c":"8192"},"log_tail":"line"}`,
+				`"default":false,"origin":"","digest":"3712b9bd32ca","preset":{"c":"8192"},"log_tail":"line"}`,
 		},
 		{
 			"ModelDetail without digest or log",
 			ModelDetail{Model: Model{Name: "x", Status: "pulled", Capabilities: []string{}}, Preset: map[string]string{}},
 			`{"name":"x","status":"pulled","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,` +
-				`"default":false,"preset":{}}`,
+				`"default":false,"origin":"","preset":{}}`,
 		},
 		{
 			"Loaded",

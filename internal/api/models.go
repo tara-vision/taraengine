@@ -69,7 +69,7 @@ func (s *Server) model(v view) api.Model {
 // catalogModel is what the catalog alone says about an item.
 func (s *Server) catalogModel(it catalog.Item) api.Model {
 	m := api.Model{
-		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size,
+		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size, Origin: it.Origin,
 		Capabilities: append([]string{}, it.Capabilities...), CapabilitiesInferred: it.Inferred,
 		NativeContext: it.NativeContext,
 	}
@@ -78,6 +78,14 @@ func (s *Server) catalogModel(it catalog.Item) api.Model {
 		m.Family, m.Params, m.Quantization = e.Family, e.Params, e.Quantization
 		m.Tier, m.Default = e.Tier, e.Default
 		tier = e.Tier
+	}
+	if it.Entry == nil { // an import: what it runs, as the index recorded it at the pull
+		m.Quantization = it.Quantization
+		src := &api.Source{Repo: it.Repo, File: it.File, SHA256: it.SHA256}
+		if it.Local {
+			src.Path = it.ModelPath
+		}
+		m.Source = src
 	}
 	if it.Pulled {
 		m.Status = string(backend.StatusPulled)

@@ -327,15 +327,18 @@ of its authors; read it on the model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
-NAME           STATUS     SIZE     TIER   CONTEXT  CAPABILITIES
-gemma4:e4b     available  4.6 GB   small  32768    tools,thinking,vision
-gemma4:12b     available  7.2 GB   16     32768    tools,thinking,vision
-gemma4:26b     available  14.6 GB  32     32768    tools,thinking,vision
+NAME           STATUS     SIZE     TIER   ORIGIN   CONTEXT  CAPABILITIES
+gemma4:e4b     available  4.6 GB   small  catalog  32768    tools,thinking,vision
+gemma4:12b     available  7.2 GB   16     catalog  32768    tools,thinking,vision
+gemma4:26b     available  14.6 GB  32     catalog  32768    tools,thinking,vision
 ...
 ```
 
 `STATUS` is `available` for a model in the catalog that is not on disk, `pulled` once it is, and `loading`, `loaded`
-or `sleeping` while the engine runs it; `failed` and `faulty` mark a load that did not work. `CONTEXT` is the context
+or `sleeping` while the engine runs it; `failed` and `faulty` mark a load that did not work. `ORIGIN` says where the
+model came from: `catalog` for an entry equal to the embedded catalog's, `registry` for one the data directory's
+`registry.yaml` holds and the catalog does not, or holds differently (the note aside), `import` for an `hf://` or local
+import. `CONTEXT` is the context
 window in tokens that the model runs at, or would run at. Sizes below 1 GB, such as a small imported model, are shown in
 MB with one decimal, and from 1 GB in GB.
 
@@ -364,7 +367,9 @@ done gemma4:12b
 A model from `hf://` or from a local path is named after its file without `.gguf`, has no tier and no promise of a
 tuned preset, and its capabilities are marked `(inferred)`: taraengine reads them from the chat template while the
 model runs and keeps them, so `taraengine list` still shows them after the model stops. Its native context window
-comes from the file's header when it is pulled, and its default window is never larger; a load that asks for another
+and its quantization come from the file's header when it is pulled (`GET /api/models` names them, with the
+repository and file or the link and the file's sha256 under `source`; a local file is read once in full for the
+digest), and its default window is never larger; a load that asks for another
 window gets that one. A local file is linked, not copied, and `taraengine rm` removes the link and never the file. A
 name that the catalog owns is refused with a 409, and so is one that llama-server would serve under the same id as
 another model's name (`gemma4:12b` and `gemma4-12b` are one id), and a different file under a name that an import
@@ -400,14 +405,14 @@ gemma4:12b  loaded  32768    10.0 GiB measured
 ```
 
 The context window defaults to 32768 tokens, or to the model's native maximum when that is smaller. `context` in the
-configuration changes the default, and `context_by_tier` sets it per RAM tier. The memory of a loaded model is
-measured on NVIDIA, as the GPU memory that the driver reports for the model's process. On a Mac the GPU has no
-per-process figure, so the number is the process's resident memory and is labeled `estimated`. A dash means that
-there is no figure.
-A model that a request through `/v1` brings up on its own gets its figure from a later read of the model list
-(`taraengine list`, `taraengine ps` or the API) that finds no load, unload or catalog change under way. A model left
-idle for `sleep_idle_seconds` sleeps: `ps` shows `sleeping` with the figure of its last run, the next request wakes
-it, and `taraengine load` of a sleeping model at its window answers at once.
+configuration changes the default, and `context_by_tier` sets it per RAM tier. The memory of a loaded model is measured
+on NVIDIA, as the GPU memory that the driver reports for the model's process. It is the memory of one request: the
+engine runs one slot unless `parallel` is set in `preset_global`. On a Mac the GPU has no per-process figure, so the
+number is the process's resident memory and is labeled `estimated`. A dash means that there is no figure. A model that a
+request through `/v1` brings up on its own gets its figure from a later read of the model list (`taraengine list`,
+`taraengine ps` or the API) that finds no load, unload or catalog change under way. A model left idle for
+`sleep_idle_seconds` sleeps: `ps` shows `sleeping` with the figure of its last run, the next request wakes it, and
+`taraengine load` of a sleeping model at its window answers at once.
 
 ## API
 
@@ -418,7 +423,7 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 |-------|--------------|--------|
 | `GET /api/health` | `{"status":"ok"}` or `"degraded"`, with the backend's name; while the daemon starts, `"starting"` with a `detail` that names the step. Open without a key; `HEAD` works too. | |
 | `GET /api/version` | The taraengine version, the runtime build and the platform. | |
-| `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default and memory. | 503 |
+| `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default, origin, source and memory. `origin` says where a model came from: `catalog` for an entry equal to the embedded catalog's, `registry` for one the data directory's `registry.yaml` holds and the catalog does not, or holds differently, `import` for an `hf://` or local import; an import's `source` names what it runs (`repo` and `file`, or the `path` of a local file's link) and the file's `sha256`, and its `quantization` is the file type its header gave. | 503 |
 | `GET /api/models/{name}` | One model in detail: also its native context, a digest, the preset in effect and, after a failure, the end of the server log. | 400, 404, 503 |
 | `GET /api/loaded` | The loaded and sleeping models, with their status (`loaded` or `sleeping`), context window and memory (`bytes` and `source`, `measured` or `estimated`). | 503 |
 | `POST /api/load` | `{"model":"...","context":N,"force":false}`, the last two optional. `context` is from 512 to 4194304 tokens; 0 or no value means the model's usual window. Loads the model and answers with it once it is up; a model that sleeps at that window is answered at once and wakes on its next request, and a model that is still loading is waited for. | 400, 404, 409 faulty, 502 load failed, 503, 504 over `load_timeout` |
@@ -493,7 +498,7 @@ Keep the key in the configuration file (with a mode that only you can read) or i
 | `hf_token` | none | A Hugging Face token for gated or private repositories. It is sent to Hugging Face only and never logged. |
 | `load_timeout` | `600` | Seconds that a load may take before it is given up, at least 1. Raise it for a slow disk. |
 | `runtime_dir` | none | A runtime directory to run instead of the pinned build under the data directory. It has to hold the `manifest.json` that `runtime install` writes, and it is verified like the pinned build. |
-| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
+| `preset_global` | none | Extra llama-server options for every model, as preset keys (the long option name without the dashes), laid over the engine's own: `jinja: "true"`, `flash-attn: auto`, `n-gpu-layers: "999"`, `parallel: "1"` (one request at a time; `"-1"` brings llama-server's automatic slot count back, several slots over one shared cache; an explicit count such as `"4"` splits the window among the slots unless `kv-unified: "true"` comes with it), `reasoning-format: deepseek` and `load-on-startup: "false"`. A key set here also wins over the catalog's own preset for that key, as the KV cache of some models. Quote numbers. |
 
 ```yaml
 # ~/.config/taraengine/config.yaml
