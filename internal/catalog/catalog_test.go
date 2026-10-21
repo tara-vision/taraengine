@@ -411,3 +411,52 @@ func TestOriginIsImportForAnIndexEntry(t *testing.T) {
 		t.Fatalf("an import: %q, want %q", got, OriginImport)
 	}
 }
+
+func TestAnImportCarriesItsFileAndDigest(t *testing.T) {
+	c, store := testCatalog(t)
+	digest := strings.Repeat("ab", 32)
+	entry := IndexEntry{Name: "ghost", Repo: "org/repo", File: "ghost.gguf", SHA256: digest, Quantization: "Q4_K_M",
+		Path: store.Path("org/repo", "ghost.gguf"), Size: 1}
+	if err := c.Index.Add(entry); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Item
+	for _, it := range items {
+		if it.Name == "ghost" {
+			got = it
+		}
+	}
+	if got.Repo != "org/repo" || got.File != "ghost.gguf" || got.SHA256 != digest || got.Quantization != "Q4_K_M" || got.Local {
+		t.Fatalf("an hf import: %+v", got)
+	}
+}
+
+func TestALocalImportCarriesItsPath(t *testing.T) {
+	c, store := testCatalog(t)
+	local := filepath.Join(t.TempDir(), "mine.gguf")
+	touch(t, local)
+	link, err := store.LinkLocal("mine", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Index.Add(IndexEntry{Name: "mine", Path: link, Size: 1, SHA256: strings.Repeat("cd", 32)}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Name == "mine" {
+			if !it.Local || it.ModelPath != link || it.Repo != "" || it.File != "" || it.SHA256 != strings.Repeat("cd", 32) {
+				t.Fatalf("a local import: %+v", it)
+			}
+			return
+		}
+	}
+	t.Fatal("mine is not listed")
+}

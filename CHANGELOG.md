@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   catalog's, `registry` for one the data directory's `registry.yaml` holds and the catalog does not, or holds
   differently, `import` for an `hf://` or local import. An override that copies the catalog verbatim keeps every
   copied entry at `catalog`.
+- An import names what it runs: `GET /api/models` carries its `source` (the repository and file of an `hf://`
+  import, the link of a local one, and the file's sha256 as the pull verified or computed it) and its
+  `quantization`, read from the file type in the GGUF header at the pull. A local import is hashed once when it is
+  linked.
 
 ### Changed
 - llama-server runs one slot (`parallel = 1` in the engine's global preset): the engine serves one request at a

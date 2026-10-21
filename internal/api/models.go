@@ -79,6 +79,14 @@ func (s *Server) catalogModel(it catalog.Item) api.Model {
 		m.Tier, m.Default = e.Tier, e.Default
 		tier = e.Tier
 	}
+	if it.Entry == nil { // an import: what it runs, as the index recorded it at the pull
+		m.Quantization = it.Quantization
+		src := &api.Source{Repo: it.Repo, File: it.File, SHA256: it.SHA256}
+		if it.Local {
+			src.Path = it.ModelPath
+		}
+		m.Source = src
+	}
 	if it.Pulled {
 		m.Status = string(backend.StatusPulled)
 	}

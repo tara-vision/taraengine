@@ -27,9 +27,11 @@ const (
 	maxArchBytes = 64
 	// maxPending bounds the context lengths kept while the architecture is not known yet.
 	maxPending = 32
-	// keyArchitecture and contextSuffix name the two keys the reader wants.
+	// keyArchitecture and contextSuffix name the two keys the reader needs, keyFileType the one it takes when the
+	// header has it.
 	keyArchitecture = "general.architecture"
 	contextSuffix   = ".context_length"
+	keyFileType     = "general.file_type"
 )
 
 // The value types of a GGUF key, as the format numbers them.
@@ -61,15 +63,38 @@ var (
 )
 
 // Info is what the header says about the model. ContextLength is <architecture>.context_length as the file stores
-// it; the caller decides which values it takes.
+// it; the caller decides which values it takes. FileType is general.file_type, llama.cpp's ftype of the weights,
+// when the header has it (HasFileType); Quantization names it.
 type Info struct {
 	Architecture  string
 	ContextLength uint64
+	FileType      uint32
+	HasFileType   bool
 }
 
-// ReadInfo reads the architecture and the native context length from the header of the GGUF file at path. It opens
-// only a regular file, so that a named pipe at the path cannot block it, and it stops as soon as it has both keys,
-// in whatever order the file holds them.
+// fileTypeNames are llama.cpp's LLAMA_FTYPE_* values, as the catalog spells a quantization; a value with no name,
+// a removed one or LLAMA_FTYPE_GUESSED, reads as unknown.
+var fileTypeNames = map[uint32]string{
+	0: "F32", 1: "F16", 2: "Q4_0", 3: "Q4_1", 7: "Q8_0", 8: "Q5_0", 9: "Q5_1", 10: "Q2_K", 11: "Q3_K_S", 12: "Q3_K_M",
+	13: "Q3_K_L", 14: "Q4_K_S", 15: "Q4_K_M", 16: "Q5_K_S", 17: "Q5_K_M", 18: "Q6_K", 19: "IQ2_XXS", 20: "IQ2_XS",
+	21: "Q2_K_S", 22: "IQ3_XS", 23: "IQ3_XXS", 24: "IQ1_S", 25: "IQ4_NL", 26: "IQ3_S", 27: "IQ3_M", 28: "IQ2_S",
+	29: "IQ2_M", 30: "IQ4_XS", 31: "IQ1_M", 32: "BF16", 36: "TQ1_0", 37: "TQ2_0", 38: "MXFP4_MOE", 39: "NVFP4",
+	40: "Q1_0", 41: "Q2_0",
+}
+
+// Quantization names the file type as the catalog spells a quantization, "" when the header gave none or one with
+// no name.
+func (i Info) Quantization() string {
+	if !i.HasFileType {
+		return ""
+	}
+	return fileTypeNames[i.FileType]
+}
+
+// ReadInfo reads the architecture, the native context length and the file type from the header of the GGUF file at
+// path. It opens only a regular file, so that a named pipe at the path cannot block it, and it stops as soon as it
+// has the three keys, in whatever order the file holds them; a header it cannot walk to its end still gives the two
+// it needs once it has them, with the file type unknown.
 func ReadInfo(path string) (Info, error) {
 	st, err := os.Stat(path)
 	if err != nil {
@@ -96,22 +121,35 @@ func read(r io.Reader) (Info, error) {
 	var s search
 	for range pairs {
 		if err := d.pair(&s); err != nil {
+			if s.arch != "" && s.hasLength { // the two it needs are in hand; the file type stays unknown
+				return s.info(), nil
+			}
 			return Info{}, err
 		}
-		if s.arch != "" && s.hasLength {
-			return Info{Architecture: s.arch, ContextLength: s.length}, nil
+		if s.arch != "" && s.hasLength && s.hasFileType {
+			return s.info(), nil
 		}
 	}
+	if s.arch != "" && s.hasLength {
+		return s.info(), nil
+	}
 	return Info{}, ErrMissing
+}
+
+// info is what the walk found.
+func (s *search) info() Info {
+	return Info{Architecture: s.arch, ContextLength: s.length, FileType: s.fileType, HasFileType: s.hasFileType}
 }
 
 // search is what the walk has found so far. Context lengths seen before the architecture wait in pending, by the
 // prefix of their key.
 type search struct {
-	arch      string
-	length    uint64
-	hasLength bool
-	pending   map[string]uint64
+	arch        string
+	length      uint64
+	hasLength   bool
+	fileType    uint32
+	hasFileType bool
+	pending     map[string]uint64
 }
 
 // decoder reads little-endian values and counts what it consumes against the budget.
@@ -155,6 +193,13 @@ func (d *decoder) pair(s *search) error {
 		return d.architecture(s)
 	case held && strings.HasSuffix(key, contextSuffix) && (typ == typeUint32 || typ == typeUint64):
 		return d.contextLength(s, strings.TrimSuffix(key, contextSuffix), typ)
+	case held && key == keyFileType && typ == typeUint32:
+		v, err := d.u32()
+		if err != nil {
+			return err
+		}
+		s.fileType, s.hasFileType = v, true
+		return nil
 	}
 	return d.skipValue(typ)
 }

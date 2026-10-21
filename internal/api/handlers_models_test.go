@@ -10,6 +10,8 @@ import (
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 )
 
@@ -309,5 +311,33 @@ func TestListModelsCarriesOrigin(t *testing.T) {
 	}
 	if got := models["extra"].Origin; got != "import" {
 		t.Fatalf("an import: origin %q", got)
+	}
+}
+
+func TestShowModelNamesAnImportsFile(t *testing.T) {
+	h := newHarness(t, "")
+	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
+	m := modelsByName(t, h)["extra"]
+	if m.Source == nil || m.Source.Repo != "org/repo" || m.Source.File != "extra.gguf" || m.Source.SHA256 != "abc" || m.Source.Path != "" {
+		t.Fatalf("an hf import names its repository, file and digest: %+v", m.Source)
+	}
+	if g := modelsByName(t, h)["gemma4:12b"]; g.Source != nil {
+		t.Fatalf("a catalog model has no source block: %+v", g.Source)
+	}
+}
+
+func TestALocalImportCarriesItsPathAndDigest(t *testing.T) {
+	h := newHarness(t, "")
+	local := filepath.Join(t.TempDir(), "Mine.gguf")
+	if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if resp, data := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: local}); resp.StatusCode != 200 {
+		t.Fatalf("pull: %d %s", resp.StatusCode, data)
+	}
+	m := modelsByName(t, h)["Mine"]
+	want := "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881" // sha256 of "x"
+	if m.Source == nil || m.Source.Path != h.cat.Store.Path("local", "Mine.gguf") || m.Source.SHA256 != want || m.Source.Repo != "" {
+		t.Fatalf("a local import names its path and digest: %+v", m.Source)
 	}
 }

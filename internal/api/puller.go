@@ -134,31 +134,39 @@ func (s *Server) pullHF(ctx context.Context, ref pull.Ref, emit func(api.PullEve
 	if err := s.fetch(ctx, art, dest, ref.File, emit); err != nil {
 		return err
 	}
+	h := s.header(ref.Name, dest)
 	return s.deps.Catalog.Index.Add(catalog.IndexEntry{
 		Name: ref.Name, Repo: ref.Repo, File: ref.File, SHA256: art.SHA256, Path: dest, Size: art.Size,
-		NativeContext: s.nativeContext(ref.Name, dest),
+		NativeContext: h.NativeContext, Quantization: h.Quantization,
 	})
 }
 
-// pullLocal links a file of this machine into the store and records it in the index.
+// pullLocal links a file of this machine into the store and records it in the index, with the digest of the file
+// as it is now: nothing verified it, so the index says what was linked.
 func (s *Server) pullLocal(p plan) error {
 	link, err := s.deps.Catalog.Store.LinkLocal(p.ref.Name, p.ref.Path)
 	if err != nil {
 		return err
 	}
+	digest, err := pull.SHA256File(link)
+	if err != nil {
+		return fmt.Errorf("pull: %s: %w", p.ref.Name, err)
+	}
+	h := s.header(p.ref.Name, link)
 	return s.deps.Catalog.Index.Add(catalog.IndexEntry{
-		Name: p.ref.Name, Path: link, Size: p.local.Size(), NativeContext: s.nativeContext(p.ref.Name, link),
+		Name: p.ref.Name, Path: link, Size: p.local.Size(), SHA256: digest,
+		NativeContext: h.NativeContext, Quantization: h.Quantization,
 	})
 }
 
-// nativeContext is the window the header of a pulled file says its model was trained for. A file whose header
-// gives none is still a model: its window stays unknown, and the log says why.
-func (s *Server) nativeContext(name, path string) int {
-	window, err := catalog.ReadNativeContext(path)
+// header is what the header of a pulled file says: the window its model was trained for and the quantization of
+// its weights. A file whose header gives no window is still a model: its window stays unknown, and the log says why.
+func (s *Server) header(name, path string) catalog.Header {
+	h, err := catalog.ReadHeader(path)
 	if err != nil {
 		s.deps.Logger.Warn("the native context window of the model is unknown", "model", name, "error", err)
 	}
-	return window
+	return h
 }
 
 func (s *Server) fetch(ctx context.Context, art pull.Artifact, dest, file string, emit func(api.PullEvent)) error {

@@ -42,26 +42,26 @@ func TestReadFindsBothKeysInAnyOrder(t *testing.T) {
 		header []byte
 		want   Info
 	}{
-		{"version 3", gguftest.Header(3, arch, window), Info{"llama", 2048}},
-		{"version 2", gguftest.Header(2, arch, window), Info{"llama", 2048}},
-		{"the context length first", gguftest.Header(3, window, arch), Info{"llama", 2048}},
+		{"version 3", gguftest.Header(3, arch, window), Info{Architecture: "llama", ContextLength: 2048}},
+		{"version 2", gguftest.Header(2, arch, window), Info{Architecture: "llama", ContextLength: 2048}},
+		{"the context length first", gguftest.Header(3, window, arch), Info{Architecture: "llama", ContextLength: 2048}},
 		{"a uint64 context length", gguftest.Header(3, gguftest.String("general.architecture", "gemma3"),
-			gguftest.U64("gemma3.context_length", 131072)), Info{"gemma3", 131072}},
+			gguftest.U64("gemma3.context_length", 131072)), Info{Architecture: "gemma3", ContextLength: 131072}},
 		{"the tokenizer's arrays first, as stories260K has them", gguftest.Header(3,
 			gguftest.Strings("tokenizer.ggml.tokens", "<unk>", "<s>", "</s>"),
 			gguftest.Array("tokenizer.ggml.scores", gguftest.TypeFloat32, 3, make([]byte, 12)),
 			gguftest.Array("tokenizer.ggml.token_type", gguftest.TypeInt32, 3, make([]byte, 12)), arch, window),
-			Info{"llama", 2048}},
+			Info{Architecture: "llama", ContextLength: 2048}},
 		{"other context lengths around the right one", gguftest.Header(3,
 			gguftest.U32("clip.context_length", 77), arch, gguftest.U32("clip.vision.context_length", 1),
-			gguftest.U32("llama.context_length", 8192)), Info{"llama", 8192}},
+			gguftest.U32("llama.context_length", 8192)), Info{Architecture: "llama", ContextLength: 8192}},
 		{"a key longer than any the reader wants", gguftest.Header(3,
-			gguftest.String(strings.Repeat("k", 300), "skipped"), arch, window), Info{"llama", 2048}},
+			gguftest.String(strings.Repeat("k", 300), "skipped"), arch, window), Info{Architecture: "llama", ContextLength: 2048}},
 		{"values of every fixed size skipped", gguftest.Header(3, gguftest.Array("u8", gguftest.TypeUint8, 2, []byte{1, 2}),
 			gguftest.Array("i16", gguftest.TypeInt16, 1, []byte{1, 2}), gguftest.Array("f64", gguftest.TypeFloat64, 1, make([]byte, 8)),
-			gguftest.KV{Key: "flag", Type: gguftest.TypeBool, Value: []byte{1}}, arch, window), Info{"llama", 2048}},
+			gguftest.KV{Key: "flag", Type: gguftest.TypeBool, Value: []byte{1}}, arch, window), Info{Architecture: "llama", ContextLength: 2048}},
 		{"a value the engine would refuse is the caller's to judge", gguftest.Header(3, arch,
-			gguftest.U64("llama.context_length", 1<<63)), Info{"llama", 1 << 63}},
+			gguftest.U64("llama.context_length", 1<<63)), Info{Architecture: "llama", ContextLength: 1 << 63}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -76,7 +76,7 @@ func TestReadFindsBothKeysInAnyOrder(t *testing.T) {
 func TestReadStopsAsSoonAsItHasBothKeys(t *testing.T) {
 	header := gguftest.Header(3, arch, window, gguftest.String("general.name", "never read"))
 	cut := header[:len(header)-5] // the third pair is cut short, and the reader never gets there
-	if got, err := read(bytes.NewReader(cut)); err != nil || got != (Info{"llama", 2048}) {
+	if got, err := read(bytes.NewReader(cut)); err != nil || got != (Info{Architecture: "llama", ContextLength: 2048}) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
@@ -170,7 +170,7 @@ func TestReadRefusesAHeaderItCannotWalk(t *testing.T) {
 			}
 		})
 	}
-	if got, err := read(bytes.NewReader(contextLengths(maxPending))); err != nil || got != (Info{"llama", 2048}) {
+	if got, err := read(bytes.NewReader(contextLengths(maxPending))); err != nil || got != (Info{Architecture: "llama", ContextLength: 2048}) {
 		t.Fatalf("as many context lengths as the reader keeps: %+v, %v", got, err)
 	}
 }
@@ -194,7 +194,7 @@ func TestReadConsumesAtMostMaxHeaderBytes(t *testing.T) {
 	room := MaxHeaderBytes - 1024
 	fits := gguftest.Header(3, gguftest.Array("tokenizer.ggml.token_type", gguftest.TypeUint8, uint64(room),
 		make([]byte, room)), arch, window)
-	if got, err := read(bytes.NewReader(fits)); err != nil || got != (Info{"llama", 2048}) {
+	if got, err := read(bytes.NewReader(fits)); err != nil || got != (Info{Architecture: "llama", ContextLength: 2048}) {
 		t.Fatalf("arrays in front that leave room for the keys: %+v, %v", got, err)
 	}
 	over := gguftest.Header(3, gguftest.Array("tokenizer.ggml.token_type", gguftest.TypeUint8, MaxHeaderBytes,
@@ -217,7 +217,7 @@ func TestReadConsumesAtMostMaxHeaderBytes(t *testing.T) {
 func TestReadInfoReadsAFile(t *testing.T) {
 	dir := t.TempDir()
 	path := gguftest.WriteModel(t, dir, "m.gguf", "llama", 2048)
-	if got, err := ReadInfo(path); err != nil || got != (Info{"llama", 2048}) {
+	if got, err := ReadInfo(path); err != nil || got != (Info{Architecture: "llama", ContextLength: 2048}) {
 		t.Fatalf("a model file: %+v, %v", got, err)
 	}
 	link := filepath.Join(dir, "link.gguf")
@@ -240,6 +240,27 @@ func TestReadInfoReadsAFile(t *testing.T) {
 	if os.Geteuid() != 0 { // root reads anything
 		if _, err := ReadInfo(locked); !errors.Is(err, fs.ErrPermission) {
 			t.Fatalf("a file this user cannot read: %v", err)
+		}
+	}
+}
+
+func TestReadTakesTheFileType(t *testing.T) {
+	header := gguftest.Header(3, arch, gguftest.U32("general.file_type", 15), window)
+	got, err := read(bytes.NewReader(header))
+	if err != nil || !got.HasFileType || got.FileType != 15 || got.Quantization() != "Q4_K_M" {
+		t.Fatalf("got %+v, %v; want file type 15, Q4_K_M", got, err)
+	}
+	if got, err := read(bytes.NewReader(gguftest.Header(3, arch, window))); err != nil || got.HasFileType || got.Quantization() != "" {
+		t.Fatalf("a header without a file type: %+v, %v", got, err)
+	}
+}
+
+func TestQuantizationNamesTheKnownFileTypes(t *testing.T) {
+	rows := map[uint32]string{0: "F32", 1: "F16", 2: "Q4_0", 7: "Q8_0", 15: "Q4_K_M", 18: "Q6_K", 19: "IQ2_XXS",
+		30: "IQ4_XS", 32: "BF16", 38: "MXFP4_MOE", 39: "NVFP4", 4: "", 33: "", 99: "", 1024: ""}
+	for ft, want := range rows {
+		if got := (Info{FileType: ft, HasFileType: true}).Quantization(); got != want {
+			t.Fatalf("file type %d: %q, want %q", ft, got, want)
 		}
 	}
 }

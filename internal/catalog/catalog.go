@@ -17,15 +17,22 @@ type Item struct {
 	// Origin says where the model came from: OriginCatalog for an entry equal to the embedded catalog's, OriginRegistry
 	// for one the data directory's registry.yaml holds and the embedded catalog does not, or holds differently, and
 	// OriginImport for an escape-hatch model.
-	Origin     string
-	Pulled     bool
-	ModelPath  string
-	MMProjPath string
-	DraftPath  string
-	DraftKind  string // "mtp" or "dflash" when DraftPath is set
-	Local      bool
-	Inferred   bool
-	Size       int64
+	Origin string
+	// Repo, File, SHA256 and Quantization name what an import runs (an hf:// import has Repo and File, a local one
+	// the link in ModelPath): the digest the pull verified or computed, the file type the header gave. A catalog
+	// model's are in Entry.
+	Repo         string
+	File         string
+	SHA256       string
+	Quantization string
+	Pulled       bool
+	ModelPath    string
+	MMProjPath   string
+	DraftPath    string
+	DraftKind    string // "mtp" or "dflash" when DraftPath is set
+	Local        bool
+	Inferred     bool
+	Size         int64
 	// NativeContext is the window the model was trained for, 0 when it is unknown: the registry's for a catalog
 	// model, and for an import the one its file's header gave when it was pulled.
 	NativeContext int
@@ -125,8 +132,8 @@ func (c Catalog) fromEntry(e *registry.Entry) Item {
 func fromIndex(e IndexEntry) Item {
 	it := Item{
 		Name: e.Name, Origin: OriginImport, ModelPath: e.Path, Local: e.Repo == "", Inferred: true, Size: e.Size,
-		NativeContext: e.NativeContext,
-		Capabilities:  slices.Clone(e.Capabilities),
+		NativeContext: e.NativeContext, Repo: e.Repo, File: e.File, SHA256: e.SHA256, Quantization: e.Quantization,
+		Capabilities: slices.Clone(e.Capabilities),
 	}
 	info, err := os.Stat(e.Path)
 	switch {
