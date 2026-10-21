@@ -1,15 +1,15 @@
 package catalog
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
-	"maps"
-	"slices"
 )
 
 func testCatalog(t *testing.T) (Catalog, pull.Store) {
@@ -459,4 +459,19 @@ func TestALocalImportCarriesItsPath(t *testing.T) {
 		}
 	}
 	t.Fatal("mine is not listed")
+}
+
+func TestOriginIgnoresTheNoteOfACopiedEntry(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	entries := slices.Clone(c.Registry.Entries)
+	entries[0].Notes = "a note of the operator's own, which changes nothing the engine serves"
+	c.Registry = &registry.Registry{Entries: entries}
+	if got := originsByName(t, c)[entries[0].Name]; got != OriginCatalog {
+		t.Fatalf("a copy with another note: %q, want %q", got, OriginCatalog)
+	}
 }

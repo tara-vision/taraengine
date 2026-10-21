@@ -158,7 +158,8 @@ func TestCanonicalKeyNamesAnAliasByItsLongName(t *testing.T) {
 
 // boardNumber is a figure that only a board can vouch for: it goes stale with the next board, so a note never
 // carries one.
-var boardNumber = regexp.MustCompile(`(?i)\b\d+ tasks?\b|\b\d+(\.\d+)?x\b|tok/s|\d+%`)
+var boardNumber = regexp.MustCompile(`(?i)\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten) tasks?\b` +
+	`|\b\d+(\.\d+)?x\b|tok/s|\d+%|scoreboard|ahead of|top of|behind`)
 
 func TestCatalogNotesCarryNoBoardNumbers(t *testing.T) {
 	reg, err := Load()

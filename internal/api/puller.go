@@ -142,15 +142,16 @@ func (s *Server) pullHF(ctx context.Context, ref pull.Ref, emit func(api.PullEve
 }
 
 // pullLocal links a file of this machine into the store and records it in the index, with the digest of the file
-// as it is now: nothing verified it, so the index says what was linked.
+// as it is now: nothing verified it, so the index says what was linked. The file is hashed before it is linked, so
+// a file that cannot be read leaves no link behind.
 func (s *Server) pullLocal(p plan) error {
+	digest, err := pull.SHA256File(p.ref.Path)
+	if err != nil {
+		return fmt.Errorf("pull: %s: %w", p.ref.Name, err)
+	}
 	link, err := s.deps.Catalog.Store.LinkLocal(p.ref.Name, p.ref.Path)
 	if err != nil {
 		return err
-	}
-	digest, err := pull.SHA256File(link)
-	if err != nil {
-		return fmt.Errorf("pull: %s: %w", p.ref.Name, err)
 	}
 	h := s.header(p.ref.Name, link)
 	return s.deps.Catalog.Index.Add(catalog.IndexEntry{

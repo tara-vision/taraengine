@@ -14,8 +14,10 @@ import (
 	"strings"
 )
 
-// MaxHeaderBytes is the most of a file the reader consumes. The keys it wants come long before the tensor data; a
-// tokenizer's arrays may come first, as in stories260K, and fit many times over.
+// MaxHeaderBytes is the most of a file the reader consumes. The two keys it needs come long before the tensor
+// data; general.file_type, the one it takes when it can, comes last in the files llama.cpp's converters write,
+// after the tokenizer's arrays (up to 15 MiB in on the catalog's files), so the reader walks most of the budget for
+// it and keeps the two keys without a quantization when the header runs past the budget before it.
 const MaxHeaderBytes = 16 << 20
 
 const (

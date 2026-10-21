@@ -216,12 +216,15 @@ func TestWireWritesThePresetsAndServesThePulledModels(t *testing.T) {
 	}
 	writeFiles(t, pull.Store{Dir: filepath.Join(dataDir, "models")}, "org/tiny", "tiny.gguf", "tiny-mtp.gguf")
 	cfg := attachedConfig(dataDir)
-	cfg.PresetGlobal = map[string]string{"n-gpu-layers": "0"}
+	cfg.PresetGlobal = map[string]string{"n-gpu-layers": "0", "parallel": "-1"} // the operator's way back to the automatic slot count
 	wired, _ := wireAttached(t, dataDir, cfg, debugLogger(io.Discard))
 
 	presets, err := os.ReadFile(llamaserver.PresetPath(dataDir))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(presets), "parallel = -1\n") || strings.Contains(string(presets), "parallel = 1\n") {
+		t.Fatalf("the operator's parallel does not win over the engine's one slot:\n%s", presets)
 	}
 	for _, want := range []string{
 		"[*]\n", "n-gpu-layers = 0\n", "jinja = true\n", "[tiny]\n", "cache-type-k = q8_0\n", "c = 512\n",

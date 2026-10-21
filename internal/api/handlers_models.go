@@ -77,6 +77,11 @@ func (s *Server) showModel(w http.ResponseWriter, r *http.Request) {
 	if e := v.item.Entry; e != nil {
 		d.Digest = e.SHA256[:12]
 		maps.Copy(d.Preset, e.Preset)
+	} else if v.item.SHA256 != "" { // an import: the digest the pull verified or computed
+		d.Digest = v.item.SHA256
+		if len(d.Digest) > 12 {
+			d.Digest = d.Digest[:12]
+		}
 	}
 	d.Preset["c"] = strconv.Itoa(m.Context)
 	if v.status != nil {

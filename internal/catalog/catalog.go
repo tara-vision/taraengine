@@ -64,17 +64,24 @@ const (
 )
 
 // originOf is OriginCatalog when no override serves, or when the embedded catalog holds an entry of the same
-// name equal to e in every field, and OriginRegistry otherwise.
+// name equal to e in every field the engine serves (the note aside: it changes nothing that runs), and
+// OriginRegistry otherwise. Every difference reads registry, never a false catalog.
 func (c Catalog) originOf(e *registry.Entry) string {
 	if c.Embedded == nil {
 		return OriginCatalog
 	}
 	for i := range c.Embedded.Entries {
-		if emb := &c.Embedded.Entries[i]; emb.Name == e.Name && reflect.DeepEqual(*emb, *e) {
+		if emb := c.Embedded.Entries[i]; emb.Name == e.Name && servedEqual(emb, *e) {
 			return OriginCatalog
 		}
 	}
 	return OriginRegistry
+}
+
+// servedEqual compares two entries in every field but Notes.
+func servedEqual(a, b registry.Entry) bool {
+	a.Notes, b.Notes = "", ""
+	return reflect.DeepEqual(a, b)
 }
 
 // List returns every registry entry in catalog order, then the index entries by name. It fails only when the

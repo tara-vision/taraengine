@@ -10,17 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - A model's `origin` in `GET /api/models` and `taraengine list`: `catalog` for an entry equal to the embedded
   catalog's, `registry` for one the data directory's `registry.yaml` holds and the catalog does not, or holds
-  differently, `import` for an `hf://` or local import. An override that copies the catalog verbatim keeps every
-  copied entry at `catalog`.
+  differently, `import` for an `hf://` or local import. An override copied from this version's catalog keeps every
+  copied entry at `catalog`, the note aside; a copy of an older catalog reads `registry` for every entry this
+  version changed.
 - An import names what it runs: `GET /api/models` carries its `source` (the repository and file of an `hf://`
   import, the link of a local one, and the file's sha256 as the pull verified or computed it) and its
-  `quantization`, read from the file type in the GGUF header at the pull. A local import is hashed once when it is
-  linked.
+  `quantization`, read from the file type in the GGUF header at the pull. A local import is hashed once before it is
+  linked. An import pulled by an earlier version shows neither until it is pulled again.
 
 ### Changed
 - llama-server runs one slot (`parallel = 1` in the engine's global preset): the engine serves one request at a
-  time, and the memory of a loaded model is the single-user figure, smaller by the KV cache of the three slots the
-  automatic count added at a 32K window. `preset_global: {parallel: "4"}` brings the automatic count back.
+  time, and the memory of a loaded model is the single-user figure, smaller than the automatic count's by the
+  per-sequence state the other slots held (the boards measure it per model). `preset_global: {parallel: "-1"}`
+  brings the automatic count back, several slots over one shared cache.
 - Catalog notes carry no board numbers; the boards do.
 
 ## [0.4.1] - 2026-10-21

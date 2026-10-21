@@ -25,6 +25,13 @@ func TestWireFormat(t *testing.T) {
 				`"tier":"16","default":true,"origin":"","memory":{"bytes":9,"source":"measured"},"exit_code":137,"error":"oom"}`,
 		},
 		{
+			"Model names an import's origin and source",
+			Model{Name: "x", Status: "pulled", Capabilities: []string{}, Origin: "import",
+				Source: &Source{Repo: "org/repo", File: "x.gguf", SHA256: "ab"}},
+			`{"name":"x","status":"pulled","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,` +
+				`"default":false,"origin":"import","source":{"repo":"org/repo","file":"x.gguf","sha256":"ab"}}`,
+		},
+		{
 			"Model keeps the empty capability list and drops the optional fields",
 			Model{Name: "x", Status: "available", Capabilities: []string{}},
 			`{"name":"x","status":"available","size":0,"context":0,"capabilities":[],"capabilities_inferred":false,"default":false,"origin":""}`,

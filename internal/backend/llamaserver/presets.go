@@ -25,7 +25,8 @@ type PresetModel struct {
 // DefaultGlobal is the [*] section: jinja templates with native tool calls, flash attention when the
 // backend supports it, every layer on the GPU, thoughts in reasoning_content, nothing loaded at start, and
 // one slot: the engine serves one request at a time, so a loaded model's memory is the single-user figure the
-// boards publish; preset_global {parallel: "4"} brings llama-server's automatic slot count back.
+// boards publish; preset_global {parallel: "-1"} brings llama-server's automatic slot count back, with the
+// unified cache that comes with it (an explicit count without kv-unified splits the window among the slots).
 func DefaultGlobal() map[string]string {
 	return map[string]string{
 		"jinja":            "true",

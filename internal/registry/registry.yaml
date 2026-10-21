@@ -109,7 +109,7 @@ entries:
     preset:
       cache-type-k: q8_0
       cache-type-v: q8_0
-    notes: Top of the 32 GB tier on the first taracode scoreboard; a 30B MoE with 3B active.
+    notes: The 32 GB default; a 30B MoE with 3B active.
   - name: qwen3.6:27b
     family: qwen3.6
     params: 27B

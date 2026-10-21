@@ -1,7 +1,11 @@
 package api
 
 import (
+	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -9,10 +13,6 @@ import (
 	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
-	"maps"
-	"os"
-	"path/filepath"
-	"slices"
 )
 
 func modelsByName(t *testing.T, h *harness) map[string]api.Model {
@@ -233,8 +233,8 @@ func TestShowOfAnEscapeHatchModel(t *testing.T) {
 	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
 	_, data := h.do(t, http.MethodGet, "/api/models/extra", "", nil)
 	d := decode[api.ModelDetail](t, data)
-	if d.Name != "extra" || d.Status != "pulled" || d.Digest != "" || d.Tier != "" || len(d.Preset) != 1 || d.Preset["c"] != "32768" || d.Size != 1 {
-		t.Fatalf("detail: %+v", d)
+	if d.Name != "extra" || d.Status != "pulled" || d.Digest != "abc" || d.Tier != "" || len(d.Preset) != 1 || d.Preset["c"] != "32768" || d.Size != 1 {
+		t.Fatalf("detail: %+v", d) // the digest is the pull's, as the index recorded it
 	}
 }
 
@@ -314,10 +314,14 @@ func TestListModelsCarriesOrigin(t *testing.T) {
 	}
 }
 
-func TestShowModelNamesAnImportsFile(t *testing.T) {
+func TestModelsListAndShowNameAnImportsFile(t *testing.T) {
 	h := newHarness(t, "")
 	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
 	m := modelsByName(t, h)["extra"]
+	_, data := h.do(t, http.MethodGet, "/api/models/extra", "", nil)
+	if d := decode[api.ModelDetail](t, data); d.Digest != "abc" || d.Source == nil || d.Source.Repo != "org/repo" {
+		t.Fatalf("the show call names an import's digest and source: %+v", d)
+	}
 	if m.Source == nil || m.Source.Repo != "org/repo" || m.Source.File != "extra.gguf" || m.Source.SHA256 != "abc" || m.Source.Path != "" {
 		t.Fatalf("an hf import names its repository, file and digest: %+v", m.Source)
 	}

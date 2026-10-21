@@ -73,9 +73,9 @@ func TestReadFindsBothKeysInAnyOrder(t *testing.T) {
 	}
 }
 
-func TestReadStopsAsSoonAsItHasBothKeys(t *testing.T) {
+func TestReadKeepsTheTwoKeysWhenAPairAfterThemIsCut(t *testing.T) {
 	header := gguftest.Header(3, arch, window, gguftest.String("general.name", "never read"))
-	cut := header[:len(header)-5] // the third pair is cut short, and the reader never gets there
+	cut := header[:len(header)-5] // the third pair is cut short: the reader meets it looking for the file type and keeps the two
 	if got, err := read(bytes.NewReader(cut)); err != nil || got != (Info{Architecture: "llama", ContextLength: 2048}) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -262,5 +262,35 @@ func TestQuantizationNamesTheKnownFileTypes(t *testing.T) {
 		if got := (Info{FileType: ft, HasFileType: true}).Quantization(); got != want {
 			t.Fatalf("file type %d: %q, want %q", ft, got, want)
 		}
+	}
+}
+
+// realLayout is a header laid out as llama.cpp's converters write it: the architecture, the context length, a large
+// tokenizer, and general.file_type last, as every catalog GGUF has it.
+func realLayout(tokenizerBytes int, fileType uint32) []byte {
+	return gguftest.Header(3, arch, window,
+		gguftest.Array("tokenizer.ggml.scores", gguftest.TypeFloat32, uint64(tokenizerBytes/4), make([]byte, tokenizerBytes)),
+		gguftest.U32("general.file_type", fileType))
+}
+
+func TestReadTakesTheFileTypeAfterALargeTokenizer(t *testing.T) {
+	got, err := read(bytes.NewReader(realLayout(8<<20, 15)))
+	if err != nil || !got.HasFileType || got.Quantization() != "Q4_K_M" {
+		t.Fatalf("the file type after an 8 MiB tokenizer: %+v, %v", got, err)
+	}
+}
+
+func TestReadWithinTheBudgetKeepsTheTwoKeysWhenTheFileTypeIsPastIt(t *testing.T) {
+	got, err := read(bytes.NewReader(realLayout(MaxHeaderBytes, 15)))
+	if err != nil || got.HasFileType || got.Architecture != "llama" || got.ContextLength != 2048 {
+		t.Fatalf("a file type past the budget: the two keys stay, the quantization is unknown: %+v, %v", got, err)
+	}
+}
+
+func TestReadStopsAfterTheThreeKeysBeforeACutPair(t *testing.T) {
+	header := gguftest.Header(3, arch, gguftest.U32("general.file_type", 7), window, gguftest.String("general.name", "never read"))
+	cut := header[:len(header)-5]
+	if got, err := read(bytes.NewReader(cut)); err != nil || got.Quantization() != "Q8_0" || got.ContextLength != 2048 {
+		t.Fatalf("got %+v, %v", got, err)
 	}
 }
