@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"maps"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/catalog"
+	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
 )
@@ -343,5 +345,29 @@ func TestALocalImportCarriesItsPathAndDigest(t *testing.T) {
 	want := "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881" // sha256 of "x"
 	if m.Source == nil || m.Source.Path != h.cat.Store.Path("local", "Mine.gguf") || m.Source.SHA256 != want || m.Source.Repo != "" {
 		t.Fatalf("a local import names its path and digest: %+v", m.Source)
+	}
+	_, data := h.do(t, http.MethodGet, "/api/models/Mine", "", nil)
+	if d := decode[api.ModelDetail](t, data); d.Digest != want[:12] {
+		t.Fatalf("the show call's digest is the first twelve characters: %q", d.Digest)
+	}
+}
+
+func TestALocalImportThatCannotBeReadIsNotPulled(t *testing.T) {
+	h := newHarness(t, "")
+	local := filepath.Join(t.TempDir(), "Sealed.gguf")
+	if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hashLocalFile = func(string) (string, error) { return "", errors.New("the file vanished under the hash") }
+	t.Cleanup(func() { hashLocalFile = pull.SHA256File })
+	resp, data := h.do(t, http.MethodPost, "/api/pull?wait=1", "", api.PullRequest{Model: local})
+	if resp.StatusCode == 200 || !strings.Contains(string(data), "Sealed") || !strings.Contains(string(data), "vanished") {
+		t.Fatalf("a local file the engine cannot hash: %d %s", resp.StatusCode, data)
+	}
+	if _, err := os.Lstat(h.cat.Store.Path("local", "Sealed.gguf")); !os.IsNotExist(err) {
+		t.Fatalf("no link is left behind: %v", err)
+	}
+	if entries, _ := h.cat.Index.Load(); len(entries) != 0 {
+		t.Fatalf("no index entry is written: %+v", entries)
 	}
 }

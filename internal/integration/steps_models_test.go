@@ -51,7 +51,7 @@ func checkCatalog(t *testing.T, s *scenario) {
 	want := api.Model{
 		Name: s.entry.Name, Status: "available", Size: s.entry.Size, Family: "tinyllamas", Params: "260K",
 		Quantization: "F32", Context: contextWindow, NativeContext: contextWindow, Capabilities: []string{},
-		Tier: "small", Default: true,
+		Tier: "small", Default: true, Origin: "registry", // the scenario's registry.yaml holds it, the embedded catalog does not
 	}
 	if !reflect.DeepEqual(models, []api.Model{want}) {
 		t.Fatalf("catalog: got %+v, want [%+v]", models, want)

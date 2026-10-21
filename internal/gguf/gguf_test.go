@@ -294,3 +294,11 @@ func TestReadStopsAfterTheThreeKeysBeforeACutPair(t *testing.T) {
 		t.Fatalf("got %+v, %v", got, err)
 	}
 }
+
+func TestReadKeepsTheTwoKeysWhenTheFileTypeValueIsCut(t *testing.T) {
+	header := gguftest.Header(3, arch, window, gguftest.U32("general.file_type", 15))
+	cut := header[:len(header)-2] // inside the file type's value
+	if got, err := read(bytes.NewReader(cut)); err != nil || got.HasFileType || got.ContextLength != 2048 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}
