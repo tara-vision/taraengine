@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-21
+
 ### Security
 - Built with Go 1.27.3, whose `crypto/x509` distrusts the compromised intermediate certificates of GO-2026-6809.
 
