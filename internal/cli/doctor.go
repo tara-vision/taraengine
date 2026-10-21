@@ -114,7 +114,7 @@ func reportRuntime(p *printer, lock runtime.Lock, runtimeDir, dataDir string) {
 // reportRegistry names the models that need a newer runtime than the one this taraengine pins. It returns the
 // catalog, or nil when the catalog cannot be read.
 func reportRegistry(p *printer, lock runtime.Lock, dataDir string) *registry.Registry {
-	reg, err := loadRegistry(dataDir)
+	reg, _, err := loadRegistry(dataDir)
 	if err != nil {
 		p.printf("Registry: %v\n", err)
 		return nil

@@ -61,13 +61,13 @@ func TestListShowsTheColumnsAndMarksInferredCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	header := strings.Fields(strings.SplitN(out, "\n", 2)[0])
-	if strings.Join(header, " ") != "NAME STATUS SIZE TIER CONTEXT CAPABILITIES" {
+	if strings.Join(header, " ") != "NAME STATUS SIZE TIER ORIGIN CONTEXT CAPABILITIES" {
 		t.Fatalf("header %q", header)
 	}
-	if row := lineWith(out, "gemma4:12b", "available", "7.2 GB", "16", "tools,thinking,vision"); row == "" || strings.Contains(row, "inferred") {
+	if row := lineWith(out, "gemma4:12b", "available", "7.2 GB", "16", "catalog", "tools,thinking,vision"); row == "" || strings.Contains(row, "inferred") {
 		t.Fatalf("a catalog model:\n%s", out)
 	}
-	if row := lineWith(out, "mine", "pulled", "(inferred)"); row == "" {
+	if row := lineWith(out, "mine", "pulled", "import", "(inferred)"); row == "" {
 		t.Fatalf("a model with inferred capabilities:\n%s", out)
 	}
 }

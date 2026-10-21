@@ -22,6 +22,7 @@ type Model struct {
 	CapabilitiesInferred bool     `json:"capabilities_inferred"`
 	Tier                 string   `json:"tier,omitempty"`
 	Default              bool     `json:"default"`
+	Origin               string   `json:"origin"` // catalog, registry (the data directory's registry.yaml) or import
 	Memory               *Memory  `json:"memory,omitempty"`
 	ExitCode             int      `json:"exit_code,omitempty"`
 	Error                string   `json:"error,omitempty"`

@@ -26,9 +26,10 @@ func newListCommand(flags *globalFlags) *cobra.Command {
 			}
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 			p := &printer{w: tw}
-			p.printf("NAME\tSTATUS\tSIZE\tTIER\tCONTEXT\tCAPABILITIES\n")
+			p.printf("NAME\tSTATUS\tSIZE\tTIER\tORIGIN\tCONTEXT\tCAPABILITIES\n")
 			for _, m := range models {
-				p.printf("%s\t%s\t%s\t%s\t%d\t%s\n", m.Name, m.Status, size(m.Size), m.Tier, m.Context, capabilities(m))
+				p.printf("%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
+					m.Name, m.Status, size(m.Size), m.Tier, m.Origin, m.Context, capabilities(m))
 			}
 			return errors.Join(p.err, tw.Flush())
 		},

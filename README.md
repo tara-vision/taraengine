@@ -327,10 +327,10 @@ of its authors; read it on the model's Hugging Face page before you use it.
 
 ```
 $ taraengine list
-NAME           STATUS     SIZE     TIER   CONTEXT  CAPABILITIES
-gemma4:e4b     available  4.6 GB   small  32768    tools,thinking,vision
-gemma4:12b     available  7.2 GB   16     32768    tools,thinking,vision
-gemma4:26b     available  14.6 GB  32     32768    tools,thinking,vision
+NAME           STATUS     SIZE     TIER   ORIGIN   CONTEXT  CAPABILITIES
+gemma4:e4b     available  4.6 GB   small  catalog  32768    tools,thinking,vision
+gemma4:12b     available  7.2 GB   16     catalog  32768    tools,thinking,vision
+gemma4:26b     available  14.6 GB  32     catalog  32768    tools,thinking,vision
 ...
 ```
 
@@ -418,7 +418,7 @@ error is `{"error":{"message":"...","hint":"..."}}`.
 |-------|--------------|--------|
 | `GET /api/health` | `{"status":"ok"}` or `"degraded"`, with the backend's name; while the daemon starts, `"starting"` with a `detail` that names the step. Open without a key; `HEAD` works too. | |
 | `GET /api/version` | The taraengine version, the runtime build and the platform. | |
-| `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default and memory. | 503 |
+| `GET /api/models` | The catalog and the pulled models: name, status, size, family, parameters, quantization, context, capabilities, tier, default, origin and memory. `origin` says where a model came from: `catalog` for an entry equal to the embedded catalog's, `registry` for one the data directory's `registry.yaml` holds and the catalog does not, or holds differently, `import` for an `hf://` or local import. | 503 |
 | `GET /api/models/{name}` | One model in detail: also its native context, a digest, the preset in effect and, after a failure, the end of the server log. | 400, 404, 503 |
 | `GET /api/loaded` | The loaded and sleeping models, with their status (`loaded` or `sleeping`), context window and memory (`bytes` and `source`, `measured` or `estimated`). | 503 |
 | `POST /api/load` | `{"model":"...","context":N,"force":false}`, the last two optional. `context` is from 512 to 4194304 tokens; 0 or no value means the model's usual window. Loads the model and answers with it once it is up; a model that sleeps at that window is answered at once and wakes on its next request, and a model that is still loading is waited for. | 400, 404, 409 faulty, 502 load failed, 503, 504 over `load_timeout` |

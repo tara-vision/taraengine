@@ -3,6 +3,7 @@ package catalog
 import (
 	"errors"
 	"os"
+	"reflect"
 	"slices"
 
 	"github.com/tara-vision/taraengine/internal/pull"
@@ -11,8 +12,12 @@ import (
 
 // Item is one model the engine knows: a registry entry, pulled or not, or an index entry.
 type Item struct {
-	Name       string
-	Entry      *registry.Entry // nil for an escape-hatch model
+	Name  string
+	Entry *registry.Entry // nil for an escape-hatch model
+	// Origin says where the model came from: OriginCatalog for an entry equal to the embedded catalog's, OriginRegistry
+	// for one the data directory's registry.yaml holds and the embedded catalog does not, or holds differently, and
+	// OriginImport for an escape-hatch model.
+	Origin     string
 	Pulled     bool
 	ModelPath  string
 	MMProjPath string
@@ -37,8 +42,32 @@ type Item struct {
 // Catalog is the registry joined with the store and the index.
 type Catalog struct {
 	Registry *registry.Registry
+	// Embedded is the catalog built into the binary when Registry is a registry.yaml override, nil when Registry is
+	// the embedded catalog itself; it tells an entry the operator copied verbatim from one they wrote.
+	Embedded *registry.Registry
 	Store    pull.Store
 	Index    *Index
+}
+
+// The origins of a model.
+const (
+	OriginCatalog  = "catalog"
+	OriginRegistry = "registry"
+	OriginImport   = "import"
+)
+
+// originOf is OriginCatalog when no override serves, or when the embedded catalog holds an entry of the same
+// name equal to e in every field, and OriginRegistry otherwise.
+func (c Catalog) originOf(e *registry.Entry) string {
+	if c.Embedded == nil {
+		return OriginCatalog
+	}
+	for i := range c.Embedded.Entries {
+		if emb := &c.Embedded.Entries[i]; emb.Name == e.Name && reflect.DeepEqual(*emb, *e) {
+			return OriginCatalog
+		}
+	}
+	return OriginRegistry
 }
 
 // List returns every registry entry in catalog order, then the index entries by name. It fails only when the
@@ -75,8 +104,9 @@ func (c Catalog) Find(name string) (Item, bool, error) {
 
 func (c Catalog) fromEntry(e *registry.Entry) Item {
 	it := Item{
-		Name: e.Name, Entry: e, Size: e.Size, ModelPath: c.Store.Path(e.HFRepo, e.File), NativeContext: e.Context,
-		Capabilities: slices.Clone(e.Capabilities),
+		Name: e.Name, Entry: e, Origin: c.originOf(e), Size: e.Size, ModelPath: c.Store.Path(e.HFRepo, e.File),
+		NativeContext: e.Context,
+		Capabilities:  slices.Clone(e.Capabilities),
 	}
 	it.Pulled = c.Store.Exists(e.HFRepo, e.File)
 	if p := e.MMProj; p != nil && c.Store.Exists(e.RepoOf(*p), p.File) {
@@ -94,8 +124,9 @@ func (c Catalog) fromEntry(e *registry.Entry) Item {
 // quiet "not pulled" would hide it, while failing the whole list would stop every other model for one file.
 func fromIndex(e IndexEntry) Item {
 	it := Item{
-		Name: e.Name, ModelPath: e.Path, Local: e.Repo == "", Inferred: true, Size: e.Size, NativeContext: e.NativeContext,
-		Capabilities: slices.Clone(e.Capabilities),
+		Name: e.Name, Origin: OriginImport, ModelPath: e.Path, Local: e.Repo == "", Inferred: true, Size: e.Size,
+		NativeContext: e.NativeContext,
+		Capabilities:  slices.Clone(e.Capabilities),
 	}
 	info, err := os.Stat(e.Path)
 	switch {

@@ -499,21 +499,21 @@ func TestLoadRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	dataDir := t.TempDir()
-	reg, err := loadRegistry(dataDir)
+	reg, _, err := loadRegistry(dataDir)
 	if err != nil || len(reg.Entries) != len(embedded.Entries) {
 		t.Fatalf("without an override the embedded catalog is used: %v %v", reg, err)
 	}
 	writeText(t, filepath.Join(dataDir, "registry.yaml"), tinyRegistry)
-	if reg, err = loadRegistry(dataDir); err != nil || len(reg.Entries) != 2 || reg.Entries[0].Name != "tiny" {
+	if reg, _, err = loadRegistry(dataDir); err != nil || len(reg.Entries) != 2 || reg.Entries[0].Name != "tiny" {
 		t.Fatalf("the data directory's catalog replaces it: %v %v", reg, err)
 	}
 	writeText(t, filepath.Join(dataDir, "registry.yaml"), "entries: [x")
-	if _, err = loadRegistry(dataDir); err == nil {
+	if _, _, err = loadRegistry(dataDir); err == nil {
 		t.Fatal("an override that does not parse must not fall back to the embedded catalog")
 	}
 	blocked := filepath.Join(t.TempDir(), "a-file")
 	writeText(t, blocked, "x")
-	if _, err = loadRegistry(blocked); err == nil || !strings.Contains(err.Error(), "registry override") {
+	if _, _, err = loadRegistry(blocked); err == nil || !strings.Contains(err.Error(), "registry override") {
 		t.Fatalf("an override that cannot even be looked for is an error, not an absent one: %v", err)
 	}
 }

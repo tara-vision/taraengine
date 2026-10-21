@@ -69,7 +69,7 @@ func (s *Server) model(v view) api.Model {
 // catalogModel is what the catalog alone says about an item.
 func (s *Server) catalogModel(it catalog.Item) api.Model {
 	m := api.Model{
-		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size,
+		Name: it.Name, Status: string(backend.StatusAvailable), Size: it.Size, Origin: it.Origin,
 		Capabilities: append([]string{}, it.Capabilities...), CapabilitiesInferred: it.Inferred,
 		NativeContext: it.NativeContext,
 	}

@@ -9,6 +9,8 @@ import (
 	"github.com/tara-vision/taraengine/internal/catalog"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/pkg/api"
+	"maps"
+	"slices"
 )
 
 func modelsByName(t *testing.T, h *harness) map[string]api.Model {
@@ -276,5 +278,36 @@ func TestRmAndAReimportDropTheSavedCapabilities(t *testing.T) {
 	}
 	if entries, err := h.cat.Index.Load(); err != nil || len(entries) != 0 {
 		t.Fatalf("rm drops the entry, and the list with it: %+v %v", entries, err)
+	}
+}
+
+func TestListModelsCarriesOrigin(t *testing.T) {
+	var changedName string
+	h := newHarness(t, "", func(d *Deps) {
+		emb, err := registry.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries := slices.Clone(d.Catalog.Registry.Entries)
+		changed := entries[0]
+		changed.Preset = maps.Clone(changed.Preset)
+		if changed.Preset == nil {
+			changed.Preset = map[string]string{}
+		}
+		changed.Preset["spec-draft-n-max"] = "6"
+		entries[0], changedName = changed, changed.Name
+		d.Catalog.Registry = &registry.Registry{Entries: entries}
+		d.Catalog.Embedded = emb
+	})
+	addHFModel(t, h, "extra", "org/repo", "extra.gguf")
+	models := modelsByName(t, h)
+	if got := models[changedName].Origin; got != "registry" {
+		t.Fatalf("%s served from a registry file that holds it differently: origin %q", changedName, got)
+	}
+	if got := models["gemma4:12b"].Origin; got != "catalog" {
+		t.Fatalf("a copy equal to the embedded entry: origin %q", got)
+	}
+	if got := models["extra"].Origin; got != "import" {
+		t.Fatalf("an import: origin %q", got)
 	}
 }

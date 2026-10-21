@@ -8,6 +8,8 @@ import (
 
 	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
+	"maps"
+	"slices"
 )
 
 func testCatalog(t *testing.T) (Catalog, pull.Store) {
@@ -324,5 +326,88 @@ func TestItemsResolveADrafterUnderItsOwnRepository(t *testing.T) {
 	}
 	if want := filepath.Join("org", "repo", "p.gguf"); !strings.HasSuffix(it.MMProjPath, want) {
 		t.Errorf("projector path %q, want it under the entry's repository", it.MMProjPath)
+	}
+}
+
+func originsByName(t *testing.T, c Catalog) map[string]string {
+	t.Helper()
+	items, err := c.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, it := range items {
+		out[it.Name] = it.Origin
+	}
+	return out
+}
+
+func TestOriginIsCatalogWithoutAnOverride(t *testing.T) {
+	c, _ := testCatalog(t)
+	for name, origin := range originsByName(t, c) {
+		if origin != OriginCatalog {
+			t.Fatalf("%s: origin %q, want %q", name, origin, OriginCatalog)
+		}
+	}
+}
+
+func TestOriginIsCatalogForAnEntryEqualToTheEmbeddedOne(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	for name, origin := range originsByName(t, c) {
+		if origin != OriginCatalog {
+			t.Fatalf("%s: origin %q, want %q", name, origin, OriginCatalog)
+		}
+	}
+}
+
+func TestOriginIsRegistryForAnEntryTheEmbeddedCatalogHoldsDifferently(t *testing.T) {
+	c, _ := testCatalog(t)
+	emb, err := registry.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Embedded = emb
+	entries := slices.Clone(c.Registry.Entries)
+	changed := entries[0]
+	changed.Preset = maps.Clone(changed.Preset)
+	if changed.Preset == nil {
+		changed.Preset = map[string]string{}
+	}
+	changed.Preset["spec-draft-n-max"] = "6"
+	entries[0] = changed
+	stranger := entries[1]
+	stranger.Name = "stranger:1b"
+	entries = append(entries, stranger)
+	c.Registry = &registry.Registry{Entries: entries}
+	got := originsByName(t, c)
+	if got[changed.Name] != OriginRegistry {
+		t.Fatalf("a copied entry with one key changed: %q, want %q", got[changed.Name], OriginRegistry)
+	}
+	if got["stranger:1b"] != OriginRegistry {
+		t.Fatalf("a name the embedded catalog lacks: %q, want %q", got["stranger:1b"], OriginRegistry)
+	}
+	if got[entries[2].Name] != OriginCatalog {
+		t.Fatalf("an untouched copy: %q, want %q", got[entries[2].Name], OriginCatalog)
+	}
+}
+
+func TestOriginIsImportForAnIndexEntry(t *testing.T) {
+	c, store := testCatalog(t)
+	local := filepath.Join(t.TempDir(), "mine.gguf")
+	touch(t, local)
+	link, err := store.LinkLocal("mine", local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Index.Add(IndexEntry{Name: "mine", Path: link, Size: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := originsByName(t, c)["mine"]; got != OriginImport {
+		t.Fatalf("an import: %q, want %q", got, OriginImport)
 	}
 }

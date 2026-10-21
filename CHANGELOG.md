@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- A model's `origin` in `GET /api/models` and `taraengine list`: `catalog` for an entry equal to the embedded
+  catalog's, `registry` for one the data directory's `registry.yaml` holds and the catalog does not, or holds
+  differently, `import` for an `hf://` or local import. An override that copies the catalog verbatim keeps every
+  copied entry at `catalog`.
+
 ### Changed
 - llama-server runs one slot (`parallel = 1` in the engine's global preset): the engine serves one request at a
   time, and the memory of a loaded model is the single-user figure, smaller by the KV cache of the three slots the

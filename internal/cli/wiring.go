@@ -61,13 +61,18 @@ func Wire(ctx context.Context, cfg config.Config, opts WireOptions) (*Wired, err
 		opts.Logger.Warn("listening beyond localhost without an api_key; anyone on the network can use this engine",
 			"listen", cfg.Listen)
 	}
-	reg, err := loadRegistry(cfg.DataDir)
+	reg, override, err := loadRegistry(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
 	store := pull.Store{Dir: filepath.Join(cfg.DataDir, "models")}
 	index := &catalog.Index{Path: filepath.Join(store.Dir, "index.json")}
 	cat := catalog.Catalog{Registry: reg, Store: store, Index: index}
+	if override { // the embedded catalog tells a copied entry from one the operator wrote
+		if cat.Embedded, err = registry.Load(); err != nil {
+			return nil, err
+		}
+	}
 	lock, err := pinnedLock()
 	if err != nil {
 		return nil, err
@@ -157,18 +162,20 @@ func platformKey(goos, goarch, driver string) string {
 	return goos + "/" + goarch
 }
 
-// loadRegistry is the catalog of the data directory when it carries one, else the embedded catalog. An override
-// that cannot be read is an error and never a reason to fall back: the operator would be served a catalog other
-// than the one they wrote.
-func loadRegistry(dataDir string) (*registry.Registry, error) {
-	override := filepath.Join(dataDir, "registry.yaml")
-	switch _, err := os.Stat(override); {
+// loadRegistry is the catalog of the data directory when it carries one, else the embedded catalog; override says
+// which. An override that cannot be read is an error and never a reason to fall back: the operator would be served a
+// catalog other than the one they wrote.
+func loadRegistry(dataDir string) (reg *registry.Registry, override bool, err error) {
+	path := filepath.Join(dataDir, "registry.yaml")
+	switch _, err := os.Stat(path); {
 	case err == nil:
-		return registry.LoadFile(override)
+		reg, err := registry.LoadFile(path)
+		return reg, true, err
 	case errors.Is(err, fs.ErrNotExist):
-		return registry.Load()
+		reg, err := registry.Load()
+		return reg, false, err
 	default:
-		return nil, fmt.Errorf("registry override: %w", err)
+		return nil, false, fmt.Errorf("registry override: %w", err)
 	}
 }
 
