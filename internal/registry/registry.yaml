@@ -92,7 +92,7 @@ entries:
       sha256: f8f1b8c89b72da2b7391d6fe29d26dd373efe9624a3d5b3f0e99e62579b12c08
       size: 279956160
     min_runtime: b11514
-    notes: The 48 GB default since 0.3.1, five tasks ahead of qwen3.6:35b on the RTX 5090 board; 2.4x slower than qwen3.6:35b there.
+    notes: The 48 GB default since 0.3.1; the boards say why.
   - name: glm-4.7-flash
     family: glm-4.7-flash
     params: 30B-A3B

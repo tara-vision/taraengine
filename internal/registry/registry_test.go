@@ -3,6 +3,7 @@ package registry
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -151,6 +152,22 @@ func TestCanonicalKeyNamesAnAliasByItsLongName(t *testing.T) {
 	for key, want := range cases {
 		if got := CanonicalKey(key); got != want {
 			t.Errorf("CanonicalKey(%q) = %q, want %q", key, got, want)
+		}
+	}
+}
+
+// boardNumber is a figure that only a board can vouch for: it goes stale with the next board, so a note never
+// carries one.
+var boardNumber = regexp.MustCompile(`(?i)\b\d+ tasks?\b|\b\d+(\.\d+)?x\b|tok/s|\d+%`)
+
+func TestCatalogNotesCarryNoBoardNumbers(t *testing.T) {
+	reg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range reg.Entries {
+		if m := boardNumber.FindString(e.Notes); m != "" {
+			t.Fatalf("%s: the note carries a board number (%q): %s", e.Name, m, e.Notes)
 		}
 	}
 }
