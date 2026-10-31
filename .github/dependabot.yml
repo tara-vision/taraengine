@@ -15,5 +15,9 @@ updates:
     schedule:
       interval: weekly
       day: friday
+    groups:
+      # CodeQL runs only when its init and analyze steps are on one version, so both move in one pull request.
+      codeql-action:
+        patterns: ["github/codeql-action*"]
     commit-message:
       prefix: ci
