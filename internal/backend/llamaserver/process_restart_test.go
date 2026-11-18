@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -297,14 +298,35 @@ func TestNewSupervisorDefaults(t *testing.T) {
 // find; the error carries it, so the daemon's log and the service's journal name the cause.
 func TestSupervisorStartNamesWhatTheChildLastLogged(t *testing.T) {
 	const reason = "llama-server: error while loading shared libraries: libgomp.so.1: cannot open shared object file"
-	// Under -cover the helper is a coverage binary, which without GOCOVERDIR says so on its way out.
-	s, _, logPath := helperSupervisor(t, "HELPER_FAIL_START="+reason, "GOCOVERDIR="+t.TempDir())
+	s, _, logPath := helperSupervisor(t, "HELPER_FAIL_START="+reason)
 	if err := os.WriteFile(logPath, []byte("a line from an earlier run\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	err := s.Start(context.Background())
 	if err == nil || !strings.HasSuffix(err.Error(), "exited with code 127 before becoming healthy: "+reason) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A child whose port is taken says why as its last line, so the start error names the cause.
+func TestSupervisorStartSaysWhyTheChildCannotListen(t *testing.T) {
+	s, _, _ := helperSupervisor(t)
+	l, err := net.Listen("tcp", "127.0.0.1:"+helperPort(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	go func() { // the holder of the port turns a health probe away at once, instead of leaving it to its timeout
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	if err := s.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "address already in use") {
+		t.Fatalf("the start error says why the child cannot listen: %v", err)
 	}
 }
 

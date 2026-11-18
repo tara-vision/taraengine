@@ -30,7 +30,8 @@ import (
 //	                      model process, and prints "grandchild <pid>"; with
 //	                      HELPER_GRANDCHILD_IGNORES_TERM=1 that grandchild ignores SIGTERM
 //
-// Otherwise it exits with status 0 on SIGTERM.
+// Otherwise it exits with status 0 on SIGTERM. A helper that cannot listen writes the error to stderr and exits with
+// code 2.
 func TestMain(m *testing.M) {
 	if os.Getenv("TARAENGINE_HELPER") != "1" && filepath.Base(os.Args[0]) != "llama-server" {
 		os.Exit(m.Run())
@@ -75,11 +76,13 @@ func runHelper() {
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:"+port)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 	exitLater()
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"ok"}`)) })
 	if err := http.Serve(l, nil); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tara-vision/taraengine/internal/porttest"
 	"github.com/tara-vision/taraengine/internal/service"
 )
 
@@ -183,7 +184,7 @@ func (a *agentManager) Start(ctx context.Context) error {
 
 func TestTheFirstCommandStartsTheMacOSAgent(t *testing.T) {
 	fastWaits(t, time.Minute, time.Minute)
-	addr := freeAddr(t)
+	addr := porttest.FreeAddr(t)
 	agent := &agentManager{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true}}, addr: addr, t: t}
 	withManager(t, agent.fakeManager, "darwin", 501)
 	newServiceManager = func() (service.Manager, error) { return agent, nil }
@@ -222,7 +223,7 @@ func TestTheWaitStopsWhenItCannotShowItsProgress(t *testing.T) {
 	if err := f.awaitEngine(context.Background(), &failingWriter{err: errors.New("write refused")}); err == nil || !strings.Contains(err.Error(), "write refused") {
 		t.Fatalf("got %v", err)
 	}
-	addr := freeAddr(t)
+	addr := porttest.FreeAddr(t)
 	agent := &agentManager{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true}}, addr: addr, t: t}
 	withManager(t, agent.fakeManager, "darwin", 501)
 	newServiceManager = func() (service.Manager, error) { return agent, nil }
@@ -306,7 +307,7 @@ func (a *lateAgent) Start(ctx context.Context) error {
 // the user's back.
 func TestTheFirstCommandStartsAnAgentThatEndedCleanly(t *testing.T) {
 	fastWaits(t, time.Minute, time.Minute)
-	addr := freeAddr(t)
+	addr := porttest.FreeAddr(t)
 	agent := &agentManager{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true, Loaded: true,
 		LastExit: "0"}}, addr: addr, t: t}
 	withManager(t, agent.fakeManager, "darwin", 501)
@@ -325,7 +326,7 @@ func TestTheFirstCommandStartsAnAgentThatEndedCleanly(t *testing.T) {
 
 func TestTheFirstUseStartWaitsForAnEngineThatBindsLate(t *testing.T) {
 	fastWaits(t, time.Minute, 2*time.Second)
-	addr := freeAddr(t)
+	addr := porttest.FreeAddr(t)
 	agent := &lateAgent{fakeManager: &fakeManager{state: service.State{Installed: true, Enabled: true}}, addr: addr,
 		delay: 200 * time.Millisecond, t: t}
 	withManager(t, agent.fakeManager, "darwin", 501)

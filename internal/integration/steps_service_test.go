@@ -4,12 +4,12 @@ package integration
 
 import (
 	"context"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/tara-vision/taraengine/internal/config"
+	"github.com/tara-vision/taraengine/internal/porttest"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/internal/runtime"
 	"github.com/tara-vision/taraengine/pkg/client"
@@ -47,7 +47,7 @@ func newServiceScenario(t *testing.T, env environment, name string) *scenario {
 	entry := testEntry(name)
 	writeYAML(t, filepath.Join(dataDir, "registry.yaml"), registry.Registry{Entries: []registry.Entry{entry}})
 	cfg := config.Default()
-	cfg.Listen = freeLoopback(t)
+	cfg.Listen = porttest.FreeAddr(t)
 	cfg.DataDir = dataDir
 	cfg.Context = contextWindow
 	cfg.LoadTimeout = loadTimeoutSeconds
@@ -56,17 +56,6 @@ func newServiceScenario(t *testing.T, env environment, name string) *scenario {
 	writeYAML(t, configPath, cfg)
 	d := startDaemonWith(t, env, dataDir, configPath, "http://"+cfg.Listen, "--service")
 	return &scenario{env: env, d: d, c: client.New(d.baseURL, ""), entry: entry, dataDir: dataDir}
-}
-
-// freeLoopback is a loopback address nobody listens on right now.
-func freeLoopback(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().String()
 }
 
 func checkFetchedRuntime(t *testing.T, s *scenario) {

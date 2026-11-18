@@ -18,6 +18,7 @@ import (
 
 	"github.com/tara-vision/taraengine/internal/backend"
 	"github.com/tara-vision/taraengine/internal/llamatest"
+	"github.com/tara-vision/taraengine/internal/porttest"
 )
 
 // fakeProcess is the supervised child as the backend sees it. No process runs; the scripted router
@@ -367,6 +368,7 @@ func TestStartDrivesTheRealSupervisor(t *testing.T) {
 	rec := &logRecorder{}
 	b, err := New(Options{
 		RuntimeDir: runtimeDir, DataDir: dataDir, State: testStore(dataDir), Models: emptyCatalog, Logger: slog.New(rec), SleepIdleSeconds: 900,
+		Port: porttest.Free(t),
 	})
 	if err != nil {
 		t.Fatal(err)

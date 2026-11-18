@@ -15,6 +15,7 @@ import (
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/config"
 	"github.com/tara-vision/taraengine/internal/llamatest"
+	"github.com/tara-vision/taraengine/internal/porttest"
 	"github.com/tara-vision/taraengine/pkg/api"
 )
 
@@ -62,7 +63,7 @@ func runServe(t *testing.T, prepare func(dataDir string), extra ...string) (stri
 		prepare(dataDir)
 	}
 	fake := llamatest.New(t, llamatest.Options{APIKey: "k", PresetPath: llamaserver.PresetPath(dataDir)})
-	listen := freeAddr(t)
+	listen := porttest.FreeAddr(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -124,7 +125,7 @@ func TestServeRefusesADataDirectoryAnotherDaemonHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = lock.Close() })
-	listen := freeAddr(t)
+	listen := porttest.FreeAddr(t)
 	_, err = run(t, "serve", "--listen", listen, "--data-dir", dataDir, "--attach", "http://127.0.0.1:1")
 	if err == nil || !strings.Contains(err.Error(), "in use by another taraengine") {
 		t.Fatalf("got %v", err)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/llamatest"
+	"github.com/tara-vision/taraengine/internal/porttest"
 )
 
 // captureStdout points os.Stdout at a file for the rest of the test, so that Execute, which writes to the real
@@ -112,7 +113,7 @@ func TestExecuteLetsServeShutDownOnASignalWithoutTheTwoFighting(t *testing.T) {
 			captureStdout(t)
 			dataDir := t.TempDir()
 			fake := llamatest.New(t, llamatest.Options{APIKey: "k", PresetPath: llamaserver.PresetPath(dataDir)})
-			listen := freeAddr(t)
+			listen := porttest.FreeAddr(t)
 			withArgs(t, "serve", "--listen", listen, "--data-dir", dataDir, "--attach", fake.URL(), "--attach-key", "k")
 			done := make(chan error, 1)
 			go func() { done <- Execute() }()

@@ -16,6 +16,7 @@ import (
 
 	"github.com/tara-vision/taraengine/internal/backend/llamaserver"
 	"github.com/tara-vision/taraengine/internal/llamatest"
+	"github.com/tara-vision/taraengine/internal/porttest"
 	"github.com/tara-vision/taraengine/internal/pull"
 	"github.com/tara-vision/taraengine/internal/registry"
 	"github.com/tara-vision/taraengine/internal/version"
@@ -24,9 +25,7 @@ import (
 func TestServeAttachModeServesTheAPI(t *testing.T) {
 	dataDir := t.TempDir()
 	fake := llamatest.New(t, llamatest.Options{APIKey: "k", PresetPath: llamaserver.PresetPath(dataDir)})
-	l, _ := net.Listen("tcp", "127.0.0.1:0")
-	listen := l.Addr().String()
-	_ = l.Close()
+	listen := porttest.FreeAddr(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -73,17 +72,6 @@ func TestServeWithoutARuntimeExplains(t *testing.T) {
 	}
 }
 
-// freeAddr is a loopback address nobody listens on right now.
-func freeAddr(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().String()
-}
-
 // serving is a `taraengine serve` command running against an attached fake router.
 type serving struct {
 	listen  string
@@ -105,7 +93,7 @@ func startServe(t *testing.T, router llamatest.Options, prepare func(dataDir str
 	}
 	router.APIKey, router.PresetPath = "k", llamaserver.PresetPath(dataDir)
 	fake := llamatest.New(t, router)
-	listen := freeAddr(t)
+	listen := porttest.FreeAddr(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	finished := make(chan struct{})
 	var result error

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,17 +13,9 @@ import (
 	"sync"
 	"testing"
 	"time"
-)
 
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
-}
+	"github.com/tara-vision/taraengine/internal/porttest"
+)
 
 type fakeClock struct {
 	mu     sync.Mutex
@@ -66,14 +57,17 @@ func (c *fakeClock) Advance(d time.Duration) {
 // the supervisor, so a test that fails after Start never leaves the helper running.
 func helperSupervisor(t *testing.T, env ...string) (*Supervisor, *fakeClock, string) {
 	t.Helper()
-	port := freePort(t)
+	port := porttest.Free(t)
 	clock := &fakeClock{now: time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)}
 	logPath := filepath.Join(t.TempDir(), "llama-server.log")
+	// Under -cover the helper is a coverage binary, which without GOCOVERDIR says so on its way out: that line would
+	// follow the child's own last one in the log, and a start that fails reports the last line as its reason.
+	coverDir := t.TempDir()
 	client := NewClient("http://127.0.0.1:"+strconv.Itoa(port), "")
 	s := NewSupervisor(SupervisorOptions{
 		Binary:       os.Args[0],
 		Args:         []string{"--port", strconv.Itoa(port)},
-		Env:          append([]string{"TARAENGINE_HELPER=1"}, env...),
+		Env:          append([]string{"TARAENGINE_HELPER=1", "GOCOVERDIR=" + coverDir}, env...),
 		LogPath:      logPath,
 		Health:       client.Health,
 		Sleep:        clock.Sleep,
