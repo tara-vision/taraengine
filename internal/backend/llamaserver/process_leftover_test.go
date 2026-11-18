@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/tara-vision/taraengine/internal/porttest"
 )
 
 // processGone reports whether no process has the pid any more.
@@ -72,7 +74,7 @@ func leftoverRouter(t *testing.T, binary, pidFile, preset string, env ...string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = f.Close() })
-	cmd := exec.Command(binary, "--models-preset", preset, "--port", strconv.Itoa(freePort(t)))
+	cmd := exec.Command(binary, "--models-preset", preset, "--port", strconv.Itoa(porttest.Free(t)))
 	cmd.Env = append([]string{"TARAENGINE_HELPER=1", "HELPER_GRANDCHILD=1"}, env...)
 	cmd.Stdout, cmd.Stderr = f, f
 	ownProcessGroup(cmd)

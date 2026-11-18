@@ -15,6 +15,7 @@ gates="
 ./internal/backend:90
 ./internal/backend/llamaserver:90
 ./internal/llamatest:90
+./internal/porttest:90
 ./internal/measure:90
 ./internal/machine:90
 ./internal/api:90
